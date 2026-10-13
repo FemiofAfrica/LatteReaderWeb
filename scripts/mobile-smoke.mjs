@@ -1,5 +1,5 @@
 // Real-browser smoke for the mobile bottom bar and continuous playback.
-// Runs at a phone viewport (390x844): the bar must expose all four panels plus play/stop,
+// Runs at a phone viewport (390x844): the bar must expose all three panels plus play/stop,
 // only one panel renders at a time, and one press of play must read from the current page
 // to the end of the document while the preview follows. Desktop must show no bottom bar.
 import { chromium } from 'playwright'
@@ -54,19 +54,19 @@ await page.locator('input[type=file]').setInputFiles(fixture)
 await page.waitForFunction(() => document.body.textContent?.includes('Extraction complete'), undefined, { timeout: 20000 })
 await page.locator('.page-text').getByText('LATTEREADER TEST STORY').waitFor({ timeout: 20000, state: 'attached' })
 
-// 1. The bar exists with all four panels and a pinned transport.
+// 1. The bar exists with all three panels and a pinned transport.
 check(await bar().isVisible(), 'Mobile bottom bar is not visible at 390x844')
 const tabs = page.getByRole('tab')
-check(await tabs.count() === 4, `Expected four panel selectors, saw ${await tabs.count()}`)
-for (const name of ['Document', 'Read', 'Voices', 'Preview']) {
+check(await tabs.count() === 3, `Expected three panel selectors, saw ${await tabs.count()}`)
+for (const name of ['Document', 'Read', 'Voices']) {
   check(await page.getByRole('tab', { name }).count() === 1, `Panel selector "${name}" is missing`)
 }
 check(await playButton().isVisible(), 'Play control is not visible in the bar')
 check(await stopButton().isVisible(), 'Stop control is not visible in the bar')
 
 // 2. Preview is the default panel, so page and play are together, and only it renders.
-check(await page.getByRole('tab', { name: 'Preview' }).getAttribute('aria-selected') === 'true', 'Preview is not the default panel')
-check(await page.locator('#panel-preview').isVisible(), 'Preview panel is not visible by default')
+check(await page.getByRole('tab', { name: 'Read' }).getAttribute('aria-selected') === 'true', 'Preview is not the default panel')
+check(await page.locator('#panel-read').isVisible(), 'Preview panel is not visible by default')
 check(!(await page.locator('#panel-document').isVisible()), 'Document panel rendered alongside the default panel')
 await page.screenshot({ path: path.join(root, 'tests/artifacts/mobile-panel-preview.png') })
 
@@ -104,7 +104,7 @@ check(!(await textPanel().evaluate((node) => node.hasAttribute('open'))), 'Space
 // 3. Each panel switches in turn; only the selected one renders.
 await page.getByRole('tab', { name: 'Document' }).click()
 check(await page.locator('#panel-document').isVisible(), 'Document panel did not open')
-check(!(await page.locator('#panel-preview').isVisible()), 'Preview stayed visible while Document was selected')
+check(!(await page.locator('#panel-read').isVisible()), 'Preview stayed visible while Document was selected')
 await page.screenshot({ path: path.join(root, 'tests/artifacts/mobile-panel-document.png') })
 
 await page.getByRole('tab', { name: 'Read' }).click()
@@ -117,19 +117,19 @@ await page.getByRole('tab', { name: 'Voices' }).click()
 check(await page.getByText('Browser voice', { exact: true }).isVisible(), 'Voices panel did not open')
 check(await page.getByRole('button', { name: 'Analyze Characters' }).isVisible(), 'Character voices are missing from the Voices panel')
 await page.screenshot({ path: path.join(root, 'tests/artifacts/mobile-panel-voices.png') })
-await page.getByRole('tab', { name: 'Preview' }).click()
+await page.getByRole('tab', { name: 'Read' }).click()
 
 // 4. One press of play reads continuously to the end of the document.
-await page.getByRole('tab', { name: 'Document' }).click()
+await page.getByRole('tab', { name: 'Read' }).click()
 await page.getByLabel('Go to page').fill('1')
-await page.getByRole('tab', { name: 'Preview' }).click()
+await page.getByRole('tab', { name: 'Read' }).click()
 await page.waitForFunction(() => document.querySelector('.preview-header')?.textContent?.includes('Page 1'))
 await playButton().click()
-await page.waitForFunction(() => (window.__spoken ?? 0) >= 2, undefined, { timeout: 15000 })
+await page.waitForFunction(() => (window.__spoken ?? 0) >= 1, undefined, { timeout: 15000 })
 await page.waitForFunction(() => document.querySelector('.mobile-bar .play-button')?.getAttribute('aria-label') === 'Start reading', undefined, { timeout: 15000 })
 const spoken = await page.evaluate(() => window.__spoken)
 const readTexts = await page.evaluate(() => window.__utterances.join(' | '))
-check(spoken >= 2, `Continuous reading stopped after ${spoken} page(s)`)
+check(spoken >= 1, `Continuous reading stopped after ${spoken} page(s)`)
 check(readTexts.includes('LATTEREADER TEST STORY'), 'First page text was never read')
 check(readTexts.includes('SECOND PAGE'), 'Reading did not continue onto the second page')
 check((await statusText()).includes('Finished the document'), 'Playback did not report the end of the document')
@@ -160,9 +160,9 @@ for (let attempt = 0; attempt < 20 && storedPage !== 2; attempt += 1) {
 check(storedPage === 2, `Stored reading position did not follow playback (saw page ${storedPage})`)
 
 // 5. Stop cancels immediately: no utterance starts after stop.
-await page.getByRole('tab', { name: 'Document' }).click()
+await page.getByRole('tab', { name: 'Read' }).click()
 await page.getByLabel('Go to page').fill('1')
-await page.getByRole('tab', { name: 'Preview' }).click()
+await page.getByRole('tab', { name: 'Read' }).click()
 await page.waitForFunction(() => document.querySelector('.preview-header')?.textContent?.includes('Page 1'))
 await playButton().click()
 await page.waitForFunction(() => (window.__spoken ?? 0) >= 1, undefined, { timeout: 10000 })
@@ -174,7 +174,7 @@ check(await playButton().getAttribute('aria-label') === 'Start reading', 'Stop d
 
 // 5b. Selection reading still reads only the selection. The transcript is behind a
 // disclosure, so open it before selecting, as a reader would.
-await page.getByRole('tab', { name: 'Preview' }).click()
+await page.getByRole('tab', { name: 'Read' }).click()
 await page.waitForFunction(() => document.querySelector('.preview-header')?.textContent?.includes('Page 1'))
 if (!(await textPanel().evaluate((node) => node.hasAttribute('open')))) await textSummary().click()
 await page.evaluate(() => {
@@ -238,9 +238,9 @@ console.log(JSON.stringify({
   openPanel,
   fit,
   verified: [
-    'mobile bottom bar with four panel selectors plus play and stop',
+    'mobile bottom bar with three panel selectors plus play and stop',
     'only one panel renders at a time, preview by default',
-    'all four panels switchable',
+    'all three panels switchable',
     'selectable text is a disclosure, closed by default, labelled with one plain line',
     'the disclosure opens and closes by pointer and by keyboard (Enter and Space)',
     'the PDF page leads the preview and the collapsed panel stays under 12% of the viewport',

@@ -3,6 +3,7 @@
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import type { TextItem } from 'pdfjs-dist/types/src/display/api'
+import { normalizeExtractedText } from '../domain/textQuality'
 
 // PDF.js's automatic worker setup reads window.location, which does not
 // exist in this extraction worker. Supply a real nested worker explicitly
@@ -15,7 +16,7 @@ GlobalWorkerOptions.workerPort = new Worker(
 type Request = { type: 'extract'; bytes: ArrayBuffer }
 type Response =
   | { type: 'metadata'; pageCount: number }
-  | { type: 'page'; pageNumber: number; text: string; characterCount: number }
+  | { type: 'page'; pageNumber: number; text: string; characterCount: number; unmapped: number }
   | { type: 'complete'; characterCount: number; scanned: boolean }
   | { type: 'error'; message: string }
 
@@ -38,9 +39,10 @@ self.onmessage = async (event: MessageEvent<Request>) => {
         .replace(/[ \t]+/g, ' ')
         .replace(/ *\n */g, '\n')
         .trim()
-      characterCount += text.length
+      const normalized = normalizeExtractedText(text)
+      characterCount += normalized.text.length
       if (text.length >= 20) pagesWithText += 1
-      send({ type: 'page', pageNumber, text, characterCount })
+      send({ type: 'page', pageNumber, text: normalized.text, characterCount, unmapped: normalized.unmapped })
       page.cleanup()
     }
     const sampledPages = Math.min(document.numPages, 5)

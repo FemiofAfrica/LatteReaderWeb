@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "test": "vitest run",
+    "test:reading": "node scripts/reading-quality-smoke.mjs",
+    "test:extraction-quality": "node scripts/extraction-quality-probe.mjs",
     "test:watch": "vitest",
     "test:browser": "node scripts/browser-smoke.mjs",
     "test:mobile": "node scripts/mobile-smoke.mjs",

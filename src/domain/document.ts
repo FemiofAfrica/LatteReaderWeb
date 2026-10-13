@@ -1,6 +1,6 @@
 export type ExtractionMessage =
   | { type: 'metadata'; pageCount: number }
-  | { type: 'page'; pageNumber: number; text: string; characterCount: number }
+  | { type: 'page'; pageNumber: number; text: string; characterCount: number; unmapped: number }
   | { type: 'complete'; characterCount: number; scanned: boolean }
   | { type: 'error'; message: string }
 
@@ -15,6 +15,7 @@ export interface DocumentState {
   extraction: 'loading' | 'extracting' | 'complete' | 'error'
   scanned: boolean
   error: string
+  unmapped: number
 }
 
 export const emptyDocumentState = (): DocumentState => ({
@@ -28,4 +29,5 @@ export const emptyDocumentState = (): DocumentState => ({
   extraction: 'loading',
   scanned: false,
   error: '',
+  unmapped: 0,
 })

@@ -223,6 +223,12 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .mobile-page { color: var(--muted); font: 500 10px DM Mono, monospace; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
 .bezel-dial { margin-top: 12px; }
 
+.preview-header { height: auto; flex-wrap: wrap; gap: 10px; }
+.preview-header .lcd-panel { flex: 1 1 240px; margin: 0; }
+.preview-header .segmented-control { flex: 1 1 210px; }
+.preview-header .panel-copy { width: 100%; margin: 0; }
+.preview-header .bezel-dial { margin: 0; }
+
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; white-space: nowrap !important; }
 
 .diagnostics-panel { padding: 9px 20px; border-top: 1px solid var(--border); color: var(--muted); font: 11px/1.6 DM Mono, monospace; }
@@ -277,11 +283,10 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   /* One panel at a time: the rail shows only the selected group, or only the preview. */
   .control-rail [data-panel] { display: none; }
   .reader-deck[data-panel="document"] .control-rail [data-panel="document"],
-  .reader-deck[data-panel="read"] .control-rail [data-panel="read"],
   .reader-deck[data-panel="voices"] .control-rail [data-panel="voices"] { display: block; }
   .preview { display: none; min-height: 72vh; }
-  .reader-deck[data-panel="preview"] .preview { display: flex; }
-  .reader-deck[data-panel="preview"] .control-rail { display: none; }
+  .reader-deck[data-panel="read"] .preview { display: flex; }
+  .reader-deck[data-panel="read"] .control-rail { display: none; }
 
   /* Pinned directly beneath the product bar. The offset is the bar's real measured height
      (set from the top bar's own box), so the two are flush with no gap when the bar wraps. */
@@ -297,6 +302,8 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
     background: var(--chrome);
   }
   .preview-zoom { min-width: 170px; flex: 1 1 170px; }
+  .preview-header .lcd-panel { width: 100%; }
+  .preview-header .panel-copy { display: none; }
 
   .mobile-bar {
     position: fixed;

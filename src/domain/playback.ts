@@ -10,11 +10,13 @@ export interface PlaybackState {
 
 export type PlaybackAction =
   | { type: 'PLAY'; scope: ReadScope; page?: number }
+  | { type: 'WAIT'; scope: ReadScope; page: number }
   | { type: 'ADVANCE'; page: number; totalPages: number }
   | { type: 'PAUSE' }
   | { type: 'RESUME' }
   | { type: 'STOP' }
   | { type: 'END' }
+  | { type: 'FAIL'; message: string }
 
 export const initialPlaybackState: PlaybackState = {
   status: 'ready',
@@ -32,10 +34,12 @@ function scopeMessage(scope: ReadScope): string {
 export function playbackReducer(state: PlaybackState, action: PlaybackAction): PlaybackState {
   switch (action.type) {
     case 'PLAY': return { status: 'playing', scope: action.scope, page: action.page ?? state.page, message: scopeMessage(action.scope) }
+    case 'WAIT': return { status: 'playing', scope: action.scope, page: action.page, message: 'Waiting for text extraction before continuous reading' }
     case 'ADVANCE': return { ...state, status: 'playing', page: action.page, message: `Reading page ${action.page} of ${action.totalPages}` }
     case 'PAUSE': return { ...state, status: 'paused', message: 'Playback paused' }
     case 'RESUME': return { ...state, status: 'playing', message: scopeMessage(state.scope) }
     case 'END': return { ...state, status: 'ready', page: 0, message: state.scope === 'document' ? 'Finished the document' : 'Reading complete' }
+    case 'FAIL': return { ...state, status: 'ready', message: action.message }
     case 'STOP': return initialPlaybackState
   }
 }

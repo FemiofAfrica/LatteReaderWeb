@@ -189,8 +189,8 @@ const opaque = (style) => {
 // Content the pinned chrome must never trap. The zoom and fit controls live inside the preview
 // header itself, so they move with it and are excluded here; they are proved usable by the
 // pointer check on the fit control instead.
-const TRACKERS = ['.page-stage canvas', '.page-text-disclosure', '.page-text p', '.page-stepper button', '.page-jump input']
-const DOC_TRACKERS = ['.page-stepper button', '.page-jump input', 'progress', '.delete-button']
+const TRACKERS = ['.page-stage canvas', '.page-text-disclosure', '.page-text p']
+const DOC_TRACKERS = ['progress', '.delete-button']
 
 const mobileReport = {}
 const desktopReport = {}
@@ -199,7 +199,7 @@ for (const viewport of MOBILE) {
   const label = `${viewport.width}x${viewport.height}`
   const page = await browser.newPage({ viewport })
   await openFixture(page)
-  await selectPanel(page, 'Preview')
+  await selectPanel(page, 'Read')
 
   // 1. The natural state, transcript closed.
   await setTranscript(page, false)
@@ -271,6 +271,13 @@ for (const viewport of MOBILE) {
   const lines = await transcriptLines(page)
   check(lines.fullyVisible >= 1, `${label}: no full transcript line is visible at the bottom of the scroll (${lines.lines} lines drawn)`)
   await page.locator('.fit-width-button').click({ trial: true })
+  await page.getByRole('button', { name: 'Next page' }).click({ trial: true })
+  await page.locator('.page-jump input').click({ trial: true })
+  const pinnedControls = await page.evaluate(() => [...document.querySelectorAll('.page-stepper button, .page-jump input')].every(node => {
+    const r = node.getBoundingClientRect(), h = document.querySelector('.preview-header').getBoundingClientRect()
+    return r.top >= h.top && r.bottom <= h.bottom && node.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))
+  }))
+  check(pinnedControls, `${label}: page navigation is not reachable inside the pinned header`)
   if (viewport.width === 504) await page.screenshot({ path: path.join(root, 'tests/artifacts/mobile-pinned-header-504x900-bottom.png') })
 
   // 6. The other mobile panels keep the pinned bar and render no preview header.
@@ -291,7 +298,7 @@ for (const viewport of MOBILE) {
   // 7. The offset follows the bar: after a viewport change the two are still flush and the
   // measured variable matches the bar's new height.
   if (viewport.width === 390) {
-    await selectPanel(page, 'Preview')
+    await selectPanel(page, 'Read')
     await page.setViewportSize({ width: 768, height: 1024 })
     await settle(page)
     await scrollTo(page, 0)
@@ -331,7 +338,7 @@ for (const viewport of DESKTOP) {
   const label = `${viewport.width}x${viewport.height}`
   const page = await browser.newPage({ viewport })
   await openFixture(page)
-  await selectPanel(page, 'Preview')
+  await selectPanel(page, 'Read')
   await setTranscript(page, true)
   await scrollTo(page, 0)
   const rest = await chrome(page)

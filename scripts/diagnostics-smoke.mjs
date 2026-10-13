@@ -52,6 +52,8 @@ try {
   await page.getByRole('button', { name: 'Pause reading' }).click()
   await page.getByRole('button', { name: 'Resume reading' }).click()
   await page.evaluate(() => window.__testUtterance.onerror({ error: 'PRIVATE' }))
+  // Errors stop without skipping text. Explicitly retry before testing natural completion.
+  await page.getByRole('button', { name: 'Start reading' }).click()
   // Advance all remaining mock utterances to cover natural completion.
   await page.evaluate(() => { for (let i = 0; i < 20; i++) window.__testUtterance.onend() })
   await page.getByRole('button', { name: 'Start reading' }).click()
