@@ -66,6 +66,7 @@ npm run typecheck
 npm run build
 npm run dev -- --host 127.0.0.1 --port 4173
 npm run test:browser
+LATTE_READER_URL=http://127.0.0.1:4173/ npm run test:desktop
 npm audit --omit=dev
 ```
 

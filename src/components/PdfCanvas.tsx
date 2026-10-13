@@ -62,7 +62,7 @@ export function PdfCanvas({ document, pageNumber, zoom, onRendered }: PdfCanvasP
   }, [document, pageNumber, zoom, onRendered])
 
   return (
-    <div className="page-stage" aria-label={`Rendered PDF page ${pageNumber}`}>
+    <div className="page-stage" role="group" aria-label={`Rendered PDF page ${pageNumber}`}>
       {error && <p className="error-copy">{error}</p>}
       <canvas ref={canvasRef} hidden={Boolean(error)} />
     </div>

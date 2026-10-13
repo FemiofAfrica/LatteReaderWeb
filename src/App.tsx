@@ -29,8 +29,8 @@ import { DiagnosticsStatus } from './components/DiagnosticsStatus'
 const formatNumber = new Intl.NumberFormat()
 const formatBytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
-// Single breakpoint shared by the mobile bar's CSS and this component's media query.
-const MOBILE_QUERY = '(max-width: 780px)'
+// Shared with CSS: narrow or short (including browser-zoom reflow) uses the unified Reader.
+const MOBILE_QUERY = '(max-width: 780px), (max-height: 600px)'
 // Bounded wait for the next page's text while extraction is still running, so reading
 // continues as text arrives instead of failing.
 const PENDING_TEXT_TIMEOUT_MS = 15000
@@ -111,7 +111,7 @@ function App() {
   const [speed, setSpeed] = useState(1)
   const [readScope, setReadScope] = useState<ReadScope>('document')
   const [voicePlan, setVoicePlan] = useState<DocumentVoicePlan | null>(null)
-  const [analysisMessage, setAnalysisMessage] = useState('Analyze the extracted text to find character labels and dialogue.')
+  const [analysisMessage, setAnalysisMessage] = useState('Find character labels and dialogue in this PDF.')
   const [uploadError, setUploadError] = useState('')
   // The diagnosed cause, kept beside the sentence so the reader gets a recovery control only
   // when the document really was replaced and could not be opened.
@@ -248,7 +248,7 @@ function App() {
     setVoicePlan(null) // Reanalyze stored text with current extraction before speaking.
     setAnalysisMessage(record.voicePlan
       ? 'Restored the saved local voice plan for this document.'
-      : 'Analyze the extracted text to find character labels and dialogue.')
+      : 'Find character labels and dialogue in this PDF.')
 
     const state = emptyDocumentState()
     state.name = record.name
@@ -510,7 +510,7 @@ function App() {
       setManualZoom(false)
       setSpeed(1)
       setReadScope('document')
-      setAnalysisMessage('Analyze the extracted text to find character labels and dialogue.')
+      setAnalysisMessage('Find character labels and dialogue in this PDF.')
       setUploadFailure(null)
       setUploadError('Saved PDF, voice plan, settings, and reading position deleted from this browser.')
       dispatchPlayback({ type: 'STOP' })
@@ -531,6 +531,7 @@ function App() {
 
   return (
     <main className="ambient-shell">
+      {documentState && <a className="skip-link" href="#panel-read" onClick={() => setActivePanel('read')}>Skip to reader</a>}
       <section className="reader-deck" data-panel={activePanel} aria-label="LatteReader PDF console">
         <header className="topbar" ref={topbarRef}>
           <div className="brand-lockup">
@@ -545,11 +546,12 @@ function App() {
                 <span className="filename">{documentState.name}</span>
               </div>
             )}
-            <button className="primary-button" onClick={openPicker}>{documentState ? 'Replace PDF' : 'Open PDF'}</button>
+            <button className={documentState ? 'secondary-button' : 'primary-button'} onClick={openPicker}>{documentState ? 'Replace PDF' : 'Open PDF'}</button>
             <input
               ref={fileInputRef}
               className="visually-hidden"
               type="file"
+              tabIndex={-1}
               accept="application/pdf,.pdf"
               aria-label="Choose a local PDF"
               onChange={(event) => {
@@ -572,7 +574,7 @@ function App() {
             </div>
             <button className="primary-button" onClick={openPicker} disabled={isRestoring}>Open a local PDF</button>
             <p className="privacy-note">Your current PDF is saved only in this browser and restored after reload. Opening another PDF replaces it. PDF content is never uploaded.</p>
-            {uploadError.includes('could not be restored') && <button className="delete-button compact-delete" onClick={() => void deleteLocalData()}>Clear saved reader data</button>}
+            {uploadError.includes('could not be restored') && <button className="delete-button compact-delete" onClick={() => { if (window.confirm('Delete the saved PDF and all reader data from this browser?')) void deleteLocalData() }}>Clear saved reader data</button>}
             {uploadFailure?.code === 'document-open' && <button className="primary-button" onClick={openPicker}>Open the file again</button>}
           </section>
         ) : (
@@ -589,43 +591,47 @@ function App() {
                   {documentState.extraction === 'extracting' && <progress aria-label="Text extraction progress" value={extractionPercent} max="100" />}
                   {documentState.error && <p className="error-copy">{documentState.error}</p>}
                   {documentState.scanned && <p className="warning-copy"><strong>OCR required.</strong> This PDF appears to contain images without readable text. OCR is not included in this version.</p>}
-                  <p className="panel-copy">One current PDF is stored in this browser with its voice plan, settings, and page position. Replacing it removes the previous document data.</p>
-                  <button className="delete-button" onClick={() => {
-                    if (window.confirm('Delete the current PDF and all saved reader data from this browser?')) void deleteLocalData()
-                  }}>Delete local data</button>
+                  <p className="panel-copy">Saved here, not uploaded.</p>
+                  <details className="document-details">
+                    <summary>File and storage details</summary>
+                    <div tabIndex={0}>
+                      <p className="full-filename">{documentState.name}</p>
+                      <p className="panel-copy">This browser saves the PDF, voice plan, settings, and page position. Replacing it removes the previous document data.</p>
+                      <button className="delete-button" onClick={() => {
+                        if (window.confirm('Delete the current PDF and all saved reader data from this browser?')) void deleteLocalData()
+                      }}>Delete local data</button>
+                    </div>
+                  </details>
                 </section>
 
                 <section className="bezel" id="panel-voices" data-panel="voices">
                   <h2>Voice engine</h2>
                   <div className="engine-readout"><span className="status-led ready" aria-hidden="true" /><strong>Browser voice</strong></div>
-                  <p className="panel-copy">Uses SpeechSynthesis with voices installed in this browser. No Kokoro model is active yet.</p>
+                  <details className="engine-details"><summary>About browser voices</summary><p className="panel-copy" tabIndex={0}>Uses voices installed in this browser. Kokoro is not active.</p></details>
                 </section>
 
                 <section className="bezel" data-panel="voices">
                   <h2>Character voices</h2>
-                  <button className="key-button" onClick={analyze} disabled={!documentState.characterCount || documentState.extraction !== 'complete'}>Analyze Characters</button>
-                  <p className="panel-copy" aria-live="polite">{analysisMessage}</p>
+                  <button className="key-button secondary-button" onClick={analyze} disabled={!documentState.characterCount || documentState.extraction !== 'complete'}>Analyze Characters</button>
+                  <p className={voicePlan && !isMobile && !analysisMessage.includes('failed') ? 'visually-hidden' : 'panel-copy'} aria-live="polite">{analysisMessage}</p>
                   {voicePlan && (
-                    <div className="speaker-list" aria-label="Detected speakers">
+                    <div className="speaker-list" role="group" aria-label="Detected speakers">
                       <p><strong>{voicePlan.profiles.length}</strong> voices · <strong>{voicePlan.segments.length}</strong> segments</p>
-                      <ul>{voicePlan.profiles.map((profile) => <li key={profile.id}><span className={profile.id === 'narrator' ? 'narrator-dot' : ''} /><strong>{profile.displayName}</strong><small>{Math.round(profile.confidence * 100)}%</small></li>)}</ul>
+                      <ul tabIndex={0}>{voicePlan.profiles.map((profile) => <li key={profile.id}><span className={profile.id === 'narrator' ? 'narrator-dot' : ''} /><strong title={profile.displayName}>{profile.displayName}</strong><small>{Math.round(profile.confidence * 100)}%</small></li>)}</ul>
                     </div>
                   )}
                 </section>
               </aside>
 
-              <section className="preview" id="panel-read" aria-label="PDF reader">
+              <section className="preview" id="panel-read" aria-label="PDF reader" tabIndex={-1}>
+                <h1 className="visually-hidden">PDF reader</h1>
                 <header className="preview-header">
                   <span><strong>Read</strong> Page {currentPage}</span>
-                  {isMobile ? (
-                    <div className="preview-zoom-controls">
-                      <label className="dial-control preview-zoom">Zoom <output>{renderZoom}%</output><input aria-label="Preview zoom" type="range" min={MIN_PREVIEW_ZOOM} max={MAX_PREVIEW_ZOOM} step="1" value={renderZoom} onChange={(event) => { setManualZoom(true); setZoom(Number(event.target.value)) }} /></label>
-                      <button type="button" className="fit-width-button" onClick={() => setManualZoom(false)}>Fit width</button>
-                    </div>
-                  ) : (
-                    <div className="preview-zoom-controls"><span className="zoom-readout">{renderZoom}% zoom</span><button type="button" className="fit-width-button" onClick={() => { setManualZoom(false); setFitRequested(true) }}>Fit width</button></div>
-                  )}
-                  <div className="lcd-panel">
+                  <div className="preview-zoom-controls">
+                    <label className="dial-control preview-zoom">Zoom <output className="zoom-readout">{renderZoom}%</output><input aria-label="Preview zoom" type="range" min={MIN_PREVIEW_ZOOM} max={MAX_PREVIEW_ZOOM} step="1" value={renderZoom} onChange={(event) => { setManualZoom(true); setZoom(Number(event.target.value)) }} /></label>
+                    <button type="button" className="fit-width-button" onClick={() => { setManualZoom(false); if (!isMobile) setFitRequested(true) }}>Fit width</button>
+                  </div>
+                  {isMobile ? <div className="lcd-panel">
                     <div className="page-stepper">
                       <button aria-label="Previous page" disabled={currentPage <= 1} onClick={() => navigate(currentPage - 1)}><Icon name="back" /></button>
                       <output aria-label="Current page"><strong>{currentPage}</strong><span>/</span>{documentState.pageCount}</output>
@@ -641,7 +647,12 @@ function App() {
                         onChange={(event) => navigate(Math.min(documentState.pageCount, Math.max(1, Number(event.target.value))))}
                       />
                     </label>
-                  </div>
+                  </div> : <div className="page-navigation" role="group" aria-label="Page navigation">
+                    <button aria-label="Previous page" disabled={currentPage <= 1} onClick={() => navigate(currentPage - 1)}><Icon name="back" /></button>
+                    <label>Page <input aria-label="Go to page" type="number" inputMode="numeric" min="1" max={documentState.pageCount} value={currentPage} onChange={(event) => navigate(Math.min(documentState.pageCount, Math.max(1, Number(event.target.value))))} /></label>
+                    <output aria-label="Current page"><span className="visually-hidden">{currentPage}</span><span aria-hidden="true"> / </span>{documentState.pageCount}</output>
+                    <button aria-label="Next page" disabled={currentPage >= documentState.pageCount} onClick={() => navigate(currentPage + 1)}><Icon name="next" /></button>
+                  </div>}
                   <fieldset className="segmented-control">
                     <legend>Reading scope</legend>
                     {(['page', 'document'] as ReadScope[]).map((scope) => (
@@ -653,7 +664,7 @@ function App() {
                     <label className="dial-control bezel-dial">Speed <output>{speed.toFixed(2)}x</output><input aria-label="Reading speed" type="range" min="0.5" max="2" step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /></label>
                   )}
                 </header>
-                <div className="preview-scroll" ref={previewScrollRef}>
+                <div className="preview-scroll" ref={previewScrollRef} tabIndex={0} aria-label="PDF preview and selectable text">
                   {pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={renderZoom} /> : <p>Loading preview...</p>}
                   {documentState.unmapped > 0 && <p className="warning-copy" role="alert">Some letters could not be extracted from this PDF. Reading may omit them. Try a text-exported PDF; local OCR is not available yet.</p>}
                   <details className="page-text-disclosure">
@@ -674,8 +685,6 @@ function App() {
                 </div>
                 <div className="waveform" data-playing={playback.status === 'playing'} aria-hidden="true">{Array.from({ length: 32 }, (_, index) => <i key={index} style={{ height: `${8 + ((index * 17) % 25)}px` }} />)}</div>
                 <div className="playback-readout" aria-live="polite"><strong>{playback.status}</strong><span>{playback.message}</span></div>
-
-                <label className="dial-control">Zoom <output>{renderZoom}%</output><input aria-label="Preview zoom" type="range" min={MIN_PREVIEW_ZOOM} max={MAX_PREVIEW_ZOOM} step="1" value={renderZoom} onChange={(event) => { setManualZoom(true); setZoom(Number(event.target.value)) }} /></label>
               </footer>
             )}
 
@@ -690,8 +699,20 @@ function App() {
                       id={`tab-${panel.id}`}
                       aria-selected={activePanel === panel.id}
                       aria-controls={`panel-${panel.id}`}
+                      tabIndex={activePanel === panel.id ? 0 : -1}
                       className={activePanel === panel.id ? 'active' : ''}
                       onClick={() => setActivePanel(panel.id)}
+                      onKeyDown={(event) => {
+                        const index = MOBILE_PANELS.findIndex(({ id }) => id === panel.id)
+                        const next = event.key === 'ArrowRight' ? (index + 1) % MOBILE_PANELS.length
+                          : event.key === 'ArrowLeft' ? (index + MOBILE_PANELS.length - 1) % MOBILE_PANELS.length
+                          : event.key === 'Home' ? 0 : event.key === 'End' ? MOBILE_PANELS.length - 1 : null
+                        if (next === null) return
+                        event.preventDefault()
+                        const target = MOBILE_PANELS[next].id
+                        setActivePanel(target)
+                        document.getElementById(`tab-${target}`)?.focus()
+                      }}
                     >
                       <PanelIcon paths={panel.paths} />
                       <span>{panel.label}</span>

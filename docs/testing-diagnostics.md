@@ -155,13 +155,16 @@ it; do not touch document storage or tunnels.
 
 ## Mobile layout
 
-Below the single 780px breakpoint the console becomes a phone layout: a bottom bar with a
-panel switcher for Document, Read, Voices and Preview plus play and stop always visible.
-Only one panel renders at a time and Preview is the default, so the page and the play button
-sit together; the selected panel is marked for assistive tech with `aria-selected` and by a
-shape marker, not colour alone. The bar is fixed to the bottom, reserves its own space with a
-measured height and `env(safe-area-inset-bottom)`, and grows rather than clipping. Above the
-breakpoint the desktop console is unchanged and no bar is rendered.
+At widths up to 780px or heights up to 600px the console uses the unified Reader layout:
+Document, Read and Voices tabs, with play and stop always visible. Read is the default and
+contains the PDF, navigation, scope/speed and zoom/fit controls. Tabs support arrow keys,
+Home and End; the selected panel is marked with `aria-selected` and a shape marker, not
+colour alone. The fixed bottom bar reserves its measured height and safe-area space. Short
+viewports, including 200% browser-zoom reflow, use compact Reader rows without dropping
+functional controls. Larger viewports use a viewport-bound desktop console whose header,
+rail, toolbar and transport remain visible while only the PDF/transcript viewport scrolls.
+Metadata, voice lists and diagnostics have bounded local disclosures rather than growing
+the body. See [desktop console review](desktop-console-review.md) for measured evidence.
 
 ```sh
 npm run test:mobile   # bar, panel switching, continuous playback at 390x844

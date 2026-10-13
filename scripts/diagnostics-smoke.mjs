@@ -98,6 +98,7 @@ try {
   const restored = requests.slice(reloadRequestStart).flatMap(r => JSON.parse(r.body)).find(e => e.event === 'restore.complete')
   assert(restored, 'Restore telemetry was not delivered')
   page.once('dialog', d => d.accept())
+  await page.locator('.document-details summary').click()
   await page.getByRole('button', { name: 'Delete local data' }).click()
   await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor()
   await waitEvents(all => ['restore.complete', 'delete.start', 'delete.complete'].every(name => all.some(e => e.sessionId === restored.sessionId && e.event === name)))

@@ -12,6 +12,7 @@
     "test:browser": "node scripts/browser-smoke.mjs",
     "test:mobile": "node scripts/mobile-smoke.mjs",
     "test:layout": "node scripts/layout-sweep.mjs",
+    "test:desktop": "python3 tests/fixtures/generate_desktop_fixture.py && node scripts/desktop-console-smoke.mjs",
     "test:fit": "node scripts/preview-fit-smoke.mjs",
     "test:sticky": "node scripts/sticky-header-smoke.mjs",
     "test:textpanel": "node scripts/preview-text-smoke.mjs",

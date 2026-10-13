@@ -1,7 +1,7 @@
 // Selectable text panel smoke.
 //
 // The transcript panel is a disclosure, closed by default, so the PDF page leads the preview.
-// Expanded, it scrolls inside a bound of half the viewport even for a multi-screen document,
+// Expanded, mobile bounds it to half the viewport; desktop uses the sole preview scrollport,
 // and selecting text inside it still reads only the selection. Uses a long-text fixture so the
 // bound is exercised against a genuinely long wall of text.
 import { chromium } from 'playwright'
@@ -86,13 +86,27 @@ for (const viewport of VIEWPORTS) {
   })
   results.push({ ...viewport, collapsedPanelHeight: collapsed.panelHeight, expandedRegionHeight: expanded.height, unboundedRegionHeight: unbounded, bound: Math.round(expanded.viewportHeight / 2), scrollsInside: expanded.scrollHeight > expanded.clientHeight + 1 })
 
-  check(expanded.height <= expanded.viewportHeight / 2 + 1, `${viewport.label}: expanded transcript is ${expanded.height}px of a ${expanded.viewportHeight}px viewport`)
-  check(expanded.scrollHeight > expanded.clientHeight + 1, `${viewport.label}: expanded transcript does not scroll internally`)
-  check(unbounded > expanded.height + 40, `${viewport.label}: the bound is not limiting anything (${unbounded}px natural vs ${expanded.height}px)`)
-  check(expanded.height < unbounded, `${viewport.label}: expanded transcript is not bounded`)
+  if (viewport.width < 781) {
+    check(expanded.height <= expanded.viewportHeight / 2 + 1, `${viewport.label}: expanded transcript is ${expanded.height}px of a ${expanded.viewportHeight}px viewport`)
+    check(expanded.scrollHeight > expanded.clientHeight + 1, `${viewport.label}: expanded transcript does not scroll internally`)
+    check(unbounded > expanded.height + 40, `${viewport.label}: the bound is not limiting anything (${unbounded}px natural vs ${expanded.height}px)`)
+    check(expanded.height < unbounded, `${viewport.label}: expanded transcript is not bounded`)
+  } else {
+    const scroll = await page.evaluate(() => {
+      const viewer=document.querySelector('.preview-scroll'), header=document.querySelector('.preview-header'), text=document.querySelector('.page-text')
+      const top=header.getBoundingClientRect().top
+      viewer.scrollTop=viewer.scrollHeight
+      const end=viewer.scrollTop
+      viewer.scrollTop=0
+      return { bodyScroll:document.documentElement.scrollHeight-innerHeight, viewerHeight:viewer.clientHeight, contentHeight:viewer.scrollHeight, end, headerDelta:header.getBoundingClientRect().top-top, nestedOverflow:getComputedStyle(text).overflow }
+    })
+    check(scroll.bodyScroll===0 && scroll.end>100 && scroll.contentHeight>scroll.viewerHeight, 'desktop: long transcript must scroll inside the viewer, not grow the body')
+    check(scroll.headerDelta===0 && scroll.nestedOverflow==='visible', 'desktop: transcript created another document scrollport or moved chrome')
+    results.at(-1).viewerScroll=scroll
+  }
 
   // Selecting text inside the open panel still reads only the selection.
-  if (viewport.width < 780) {
+  {
     await page.evaluate(() => {
       const paragraph = document.querySelector('.page-text p')
       const range = document.createRange()
@@ -102,13 +116,13 @@ for (const viewport of VIEWPORTS) {
       selection.removeAllRanges()
       selection.addRange(range)
     })
-    await page.locator('.mobile-bar').getByRole('button', { name: 'Start reading' }).click()
+    await page.getByRole('button', { name: 'Start reading' }).click()
     await page.waitForFunction(() => (window.__utterances ?? []).length >= 1, undefined, { timeout: 10000 })
     const spoken = await page.evaluate(() => window.__utterances.at(-1))
     check(spoken.length < 40, `${viewport.label}: selection reading read more than the selection ("${spoken}")`)
     check(!spoken.includes('transcript line'), `${viewport.label}: selection reading escaped the selection ("${spoken}")`)
     results.at(-1).selectionRead = spoken
-    await page.locator('.mobile-bar').getByRole('button', { name: 'Stop reading' }).click()
+    await page.getByRole('button', { name: 'Stop reading' }).click()
   }
 
   await summary.click()

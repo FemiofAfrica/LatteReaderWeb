@@ -145,6 +145,7 @@ check(storedDocument.byteLength > 0 && storedDocument.count === 1, 'IndexedDB di
 check(storedDocument.currentPage === 2, 'IndexedDB did not retain the current reading page')
 
 page.once('dialog', (dialog) => dialog.accept())
+await page.locator('.document-details summary').click()
 await page.getByRole('button', { name: 'Delete local data' }).click()
 await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor()
 

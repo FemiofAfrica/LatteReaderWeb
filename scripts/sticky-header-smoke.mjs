@@ -282,6 +282,7 @@ for (const viewport of MOBILE) {
 
   // 6. The other mobile panels keep the pinned bar and render no preview header.
   await selectPanel(page, 'Document')
+  await page.locator('.document-details summary').click()
   await scrollTo(page, 0)
   const docRest = await chrome(page)
   check(docRest.topbar.position === 'sticky' && docRest.topbar.top === 0, `${label}: the product bar is not pinned in the Document panel`)
@@ -342,16 +343,21 @@ for (const viewport of DESKTOP) {
   await setTranscript(page, true)
   await scrollTo(page, 0)
   const rest = await chrome(page)
-  await scrollTo(page, Math.round(rest.maxScroll / 2))
+  await page.locator('.preview-scroll').evaluate(el => { el.scrollTop = 100 })
+  await settle(page)
   const mid = await chrome(page)
-  await scrollTo(page, rest.maxScroll)
+  await page.locator('.preview-scroll').evaluate(el => { el.scrollTop = el.scrollHeight })
+  await settle(page)
   const bottom = await chrome(page)
 
   check(rest.topbar.position === 'static', `${label}: the product bar is ${rest.topbar.position} on desktop`)
   check(rest.previewHeader.position === 'static', `${label}: the preview header is ${rest.previewHeader.position} on desktop`)
-  check(rest.deck.borderRadius === (viewport.width <= 1100 ? '20px' : '28px'), `${label}: the console bezel radius changed to ${rest.deck.borderRadius}`)
+  check(rest.deck.borderRadius === '24px', `${label}: the console bezel radius changed to ${rest.deck.borderRadius}`)
   check(rest.deck.overflow === 'hidden', `${label}: the desktop deck overflow changed to ${rest.deck.overflow}`)
-  check(rest.topbar.backgroundColor === 'rgba(0, 0, 0, 0)' && rest.previewHeader.backgroundColor === 'rgba(0, 0, 0, 0)', `${label}: a desktop header gained a background (${rest.topbar.backgroundColor} / ${rest.previewHeader.backgroundColor})`)
+  check(rest.previewHeader.backgroundColor === 'rgb(44, 34, 26)', `${label}: the reader toolbar lost its opaque chrome surface`)
+  const innerScroll = await page.locator('.preview-scroll').evaluate(el => el.scrollTop)
+  check(rest.maxScroll === 0 && innerScroll > 0, `${label}: document scroll ownership failed (${rest.maxScroll} outer / ${innerScroll} inner)`)
+  check(rest.topbar.top === mid.topbar.top && mid.topbar.top === bottom.topbar.top && rest.previewHeader.top === bottom.previewHeader.top, `${label}: desktop chrome moved with preview scroll`)
   check(rest.topbarHeightVar === '', `${label}: the mobile header offset variable leaked onto desktop ("${rest.topbarHeightVar}")`)
   check(!rest.mobileBar && rest.transport.visible, `${label}: the desktop console controls changed`)
   const full = await page.screenshot({ path: path.join(root, `tests/artifacts/desktop-console-${viewport.width}.png`), fullPage: true })
@@ -384,7 +390,7 @@ console.log(JSON.stringify({
     'every tracked element is scrolled to and measured clear of the pinned band and the fixed bar',
     'a whole transcript line and the page controls stay usable at the bottom of the scroll',
     'the other mobile panels keep the pinned bar and render no preview header',
-    'desktop is unchanged: nothing pinned, same bezel, same console',
+    'desktop chrome is anchored in a viewport-bound console while only the preview scrolls',
   ],
   mobile: mobileReport,
   desktop: desktopReport,
