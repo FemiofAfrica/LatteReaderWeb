@@ -108,3 +108,63 @@ describe('private ingestion retention and rejection diagnostics', () => {
     }
   })
 })
+
+describe('private ingestion is idempotent', () => {
+  it('does not store a retried batch twice', async () => {
+    const directory = mkdtempSync(join(process.env.TMPDIR ?? '/root/.hermes/cache/scratch', 'latte-idempotent-'))
+    const old = process.cwd()
+    process.chdir(directory)
+    const plugin = privateDiagnosticsPlugin(true)
+    process.chdir(old)
+    let middleware: (req: IncomingMessage, res: ServerResponse, next: () => void) => void
+    const hook = plugin.configureServer as (server: ViteDevServer) => void
+    hook({ middlewares: { use(fn: typeof middleware) { middleware = fn } } } as unknown as ViteDevServer)
+    const server = createServer((req, res) => middleware(req, res, () => { res.statusCode = 404; res.end() }))
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+    const logFile = join(directory, '.runtime/diagnostics/events.jsonl')
+    const sessionId = crypto.randomUUID()
+    const event = (name: DiagnosticEvent['event'], extra: Partial<DiagnosticEvent> = {}): DiagnosticEvent => ({
+      timestamp: new Date().toISOString(), sessionId, version: APP_VERSION, event: name,
+      severity: /fail$|error$/.test(name) ? 'error' : 'info', ...extra,
+    })
+    const post = (events: unknown) => fetch(`${origin}/__latte_diagnostics/events`, {
+      method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(events),
+    })
+    const readLog = () => readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as DiagnosticEvent)
+    try {
+      // The exact shape recorded for session 82557456: one batch of lifecycle events, retried.
+      const batch = [event('session.start'), event('restore.start'), event('delete.start'), event('delete.complete')]
+      expect((await post(batch)).status).toBe(204)
+      expect(readLog()).toHaveLength(4)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        expect((await post(batch)).status).toBe(204)
+        expect(readLog(), `retry ${attempt + 1} was stored again`).toHaveLength(4)
+      }
+      expect(readLog().map(e => e.event)).toEqual(['session.start', 'restore.start', 'delete.start', 'delete.complete'])
+
+      // A batch that resends stored events and adds one new event stores only the new event.
+      expect((await post([...batch, event('delete.fail', { errorCode: 'unknown' })])).status).toBe(204)
+      const afterMixed = readLog()
+      expect(afterMixed).toHaveLength(5)
+      expect(afterMixed.filter(e => e.event === 'session.start')).toHaveLength(1)
+      expect(afterMixed[4].event).toBe('delete.fail')
+
+      // The same event at a different millisecond is a genuinely different event.
+      const later = event('delete.complete')
+      later.timestamp = new Date(Date.parse(later.timestamp) + 1000).toISOString()
+      expect((await post([later])).status).toBe(204)
+      expect(readLog()).toHaveLength(6)
+
+      // The log stays content-free: only allowlisted fields, no comparison key, no cause text.
+      const raw = readFileSync(logFile, 'utf8')
+      expect(raw).not.toContain('PRIVATE')
+      for (const entry of readLog()) {
+        expect(Object.keys(entry).every(key => ['timestamp', 'sessionId', 'version', 'event', 'severity', 'errorCode', 'page', 'count', 'durationMs', 'zoom'].includes(key))).toBe(true)
+      }
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()))
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+})

@@ -11,6 +11,7 @@ import {
   type CurrentDocumentRecord,
 } from './domain/currentDocumentStore'
 import { emptyDocumentState, type DocumentState, type ExtractionMessage } from './domain/document'
+import { uploadDocument } from './domain/uploadFlow'
 import { computeFitZoom, MAX_PREVIEW_ZOOM, MIN_PREVIEW_ZOOM } from './domain/fit'
 import {
   advancePage,
@@ -24,6 +25,7 @@ import {
 import { BrowserSpeechEngine } from './speech/SpeechEngine'
 import { recordEvent } from './diagnostics/diagnostics'
 import { shouldRecordProgress } from './diagnostics/progress'
+import type { UploadFailure } from './pdf/uploadFailure'
 import { DiagnosticsStatus } from './components/DiagnosticsStatus'
 
 const formatNumber = new Intl.NumberFormat()
@@ -113,6 +115,9 @@ function App() {
   const [voicePlan, setVoicePlan] = useState<DocumentVoicePlan | null>(null)
   const [analysisMessage, setAnalysisMessage] = useState('Analyze the extracted text to find character labels and dialogue.')
   const [uploadError, setUploadError] = useState('')
+  // The diagnosed cause, kept beside the sentence so the reader gets a recovery control only
+  // when the document really was replaced and could not be opened.
+  const [uploadFailure, setUploadFailure] = useState<UploadFailure | null>(null)
   const [isRestoring, setIsRestoring] = useState(true)
   const [activePanel, setActivePanel] = useState<MobilePanel>('preview')
   const [playback, dispatchPlayback] = useReducer(playbackReducer, initialPlaybackState)
@@ -291,6 +296,7 @@ function App() {
 
     setPdf(document)
     setUploadError('')
+    setUploadFailure(null)
     setCurrentPage(Math.min(Math.max(record.reader.currentPage, 1), document.numPages))
     setZoom(record.reader.zoom)
     // A newly opened document starts from the stored setting again, so the mobile fit applies.
@@ -373,33 +379,32 @@ function App() {
   }
 
   const loadPdf = async (file: File) => {
-    const started = performance.now()
-    recordEvent('upload.start')
     setUploadError('')
-    try {
-      const bytes = await file.arrayBuffer()
-      const record: CurrentDocumentRecord = {
+    setUploadFailure(null)
+    // One honest cause per failure. The flow keeps validation ahead of the replacement, so
+    // only a failure before the replace may say the saved document was not changed.
+    const failure = await uploadDocument<PDFDocumentProxy>(file, {
+      readBytes: (target) => target.arrayBuffer(),
+      buildRecord: (target, bytes) => ({
         schemaVersion: CURRENT_SCHEMA_VERSION,
-        id: `${file.name}:${file.size}:${file.lastModified}`,
-        name: file.name,
-        size: file.size,
-        lastModified: file.lastModified,
-        mimeType: file.type || 'application/pdf',
+        id: `${target.name}:${target.size}:${target.lastModified}`,
+        name: target.name,
+        size: target.size,
+        lastModified: target.lastModified,
+        mimeType: target.type || 'application/pdf',
         bytes,
         reader: { currentPage: 1, zoom, speed, readScope },
         voicePlan: null,
-      }
-      const document = await validateAndReplaceCurrentDocument(
-        record,
-        async (validationBytes) => (await import('./pdf/loadPdf')).loadPdf(validationBytes),
-      )
-      recordEvent('upload.validated', { count: document.numPages })
-      recordEvent('upload.replaced', { count: document.numPages, durationMs: performance.now() - started })
-      await activateDocument(record, document)
-    } catch {
-      recordEvent('upload.fail', { errorCode: 'pdf', durationMs: performance.now() - started })
-      setUploadError('That file is not a readable PDF. Your current saved document was not changed.')
-    }
+      }),
+      validate: async (bytes) => (await import('./pdf/loadPdf')).loadPdf(bytes),
+      validateAndReplace: (record, validate) => validateAndReplaceCurrentDocument(record, validate),
+      activate: activateDocument,
+      numPages: (document) => document.numPages,
+      record: recordEvent,
+      classify: async (error, phase) => (await import('./pdf/loadPdf')).classifyUploadError(error, phase),
+    })
+    setUploadFailure(failure)
+    if (failure) setUploadError(failure.message)
   }
 
   useEffect(() => {
@@ -418,7 +423,7 @@ function App() {
         }
       } catch {
         recordEvent('restore.fail', { errorCode: 'storage', durationMs: performance.now() - started })
-        if (!cancelled) setUploadError('The saved PDF could not be restored. You can delete it and open another PDF.')
+        if (!cancelled) { setUploadFailure(null); setUploadError('The saved PDF could not be restored. You can delete it and open another PDF.') }
       } finally {
         if (!cancelled) setIsRestoring(false)
       }
@@ -520,11 +525,13 @@ function App() {
       setSpeed(1)
       setReadScope('document')
       setAnalysisMessage('Analyze the extracted text to find character labels and dialogue.')
+      setUploadFailure(null)
       setUploadError('Saved PDF, voice plan, settings, and reading position deleted from this browser.')
       dispatchPlayback({ type: 'STOP' })
       recordEvent('delete.complete')
     } catch {
       recordEvent('delete.fail', { errorCode: 'storage' })
+      setUploadFailure(null)
       setUploadError('Local data could not be deleted. Try again.')
     }
   }
@@ -580,6 +587,7 @@ function App() {
             <button className="primary-button" onClick={openPicker} disabled={isRestoring}>Open a local PDF</button>
             <p className="privacy-note">Your current PDF is saved only in this browser and restored after reload. Opening another PDF replaces it. PDF content is never uploaded.</p>
             {uploadError.includes('could not be restored') && <button className="delete-button compact-delete" onClick={() => void deleteLocalData()}>Clear saved reader data</button>}
+            {uploadFailure?.code === 'document-open' && <button className="primary-button" onClick={openPicker}>Open the file again</button>}
           </section>
         ) : (
           <>

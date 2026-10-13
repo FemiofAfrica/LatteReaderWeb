@@ -23,6 +23,25 @@ export function isIndexDocumentRequest(url: string | undefined): boolean {
   const path = (url ?? '').split('?')[0].split('#')[0]
   return path === '/' || path === '/index.html'
 }
+// A retried batch must not be stored twice. Two events are the same event only when every
+// allowlisted field matches, including the millisecond timestamp, so a resent batch collapses
+// onto the copy that already landed. The key is derived in memory for the comparison only and
+// is never written: no payload, filename, document or error text enters it.
+function eventKey(event: DiagnosticEvent): string {
+  return [event.sessionId, event.event, event.timestamp, event.severity,
+    event.errorCode ?? '', event.page ?? '', event.count ?? '', event.durationMs ?? '', event.zoom ?? ''].join('|')
+}
+export function dropAlreadyStored(stored: DiagnosticEvent[], incoming: DiagnosticEvent[]): DiagnosticEvent[] {
+  const seen = new Set(stored.map(eventKey))
+  const fresh: DiagnosticEvent[] = []
+  for (const event of incoming) {
+    const key = eventKey(event)
+    if (seen.has(key)) continue
+    seen.add(key)
+    fresh.push(event)
+  }
+  return fresh
+}
 // Keep every lifecycle/failure event; bound extraction.progress first so a single
 // full-document extraction cannot evict meaningful session history.
 export function trimEvents(events: DiagnosticEvent[], limit = SERVER_LIMIT, progressLimit = PROGRESS_LIMIT): DiagnosticEvent[] {
@@ -100,7 +119,10 @@ export function privateDiagnosticsPlugin(enabled: boolean): Plugin {
             try { const event: unknown = JSON.parse(line); return validateEvent(event) ? [event] : [] } catch { return [] }
           }) : []
         }
-        const retained = trimEvents([...entries, ...payload])
+        const fresh = dropAlreadyStored(entries, payload)
+        // A batch that already landed is acknowledged, not stored again.
+        if (!fresh.length) { finish(204); return }
+        const retained = trimEvents([...entries, ...fresh])
         mkdirSync(resolve(root, '.runtime/diagnostics'), { recursive: true })
         writeFileSync(`${log}.tmp`, retained.map(e => JSON.stringify(e)).join('\n') + '\n')
         renameSync(`${log}.tmp`, log)

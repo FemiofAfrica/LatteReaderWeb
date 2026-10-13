@@ -12,7 +12,17 @@ export const EVENTS = [
   'window.error', 'window.rejection',
 ] as const
 export type EventName = typeof EVENTS[number]
-export const ERROR_CODES = ['unknown', 'type', 'range', 'syntax', 'abort', 'pdf', 'worker', 'storage', 'speech', 'render', 'http', 'timeout', 'network'] as const
+// One fixed reason code per upload cause, so a rejected file can be triaged after the fact
+// instead of collapsing every cause into one code. Declared with the messages themselves.
+export { UPLOAD_REASON_CODES, type UploadReasonCode } from '../pdf/uploadFailure'
+export const ERROR_CODES = [
+  'unknown', 'type', 'range', 'syntax', 'abort',
+  // `pdf` is no longer emitted: upload failures carry one of the codes below. It stays in the
+  // allowlist so event logs written before the split are still readable.
+  'pdf', 'worker', 'storage', 'speech', 'render', 'http', 'timeout', 'network',
+  'file-empty', 'file-not-pdf', 'file-unreadable', 'pdf-password', 'pdf-damaged', 'pdf-unopened',
+  'storage-full', 'storage-save', 'document-open',
+] as const
 export type ErrorCode = typeof ERROR_CODES[number]
 export interface DiagnosticEvent {
   timestamp: string

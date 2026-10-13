@@ -83,6 +83,46 @@ and approximate time (not PDF text). Filter `sessionId` by that prefix, order by
   connection, a 4xx reason at a rejected batch), then service health and tunnel; use local
   export rather than weakening the origin or loopback guards.
 
+## Upload failure reasons
+
+A rejected upload carries exactly one cause, one fixed reason code and one plain sentence.
+The code is what triage reads from `upload.fail`; the sentence is what the reader sees. Both
+are asserted by test rather than inferred.
+
+| Reason code | Reader sees |
+| --- | --- |
+| `file-empty` | That file is empty, so your saved document was not changed. |
+| `file-not-pdf` | That file is not a PDF, so your saved document was not changed. |
+| `file-unreadable` | That file could not be read from where it lives, so your saved document was not changed. Download it first and try again. |
+| `pdf-password` | That PDF is locked with a password, so your saved document was not changed. Unlock it and try again. |
+| `pdf-damaged` | That PDF is damaged or incomplete, so your saved document was not changed. |
+| `pdf-unopened` | That PDF could not be opened, so your saved document was not changed. |
+| `storage-full` | There is not enough room in this browser to save that PDF, so your saved document was not changed. |
+| `storage-save` | That PDF could not be saved in this browser, so your saved document was not changed. |
+| `document-open` | Your new PDF was saved, but it could not be opened for reading. Open the file again to recover. |
+
+The unchanged claim is only made where it is true. Reading the file, the preflight checks,
+validation and the replacement all happen before the stored document is touched, so a
+failure in any of them leaves it intact. Only `document-open` happens after a successful
+replacement. It never claims the document was unchanged, and it states what really
+happened. The old coarse `pdf` code is no longer emitted; it stays in the allowlist so logs
+written before the split remain readable.
+
+Classification uses PDF.js's own error types (`PasswordException`, `InvalidPDFException`,
+`ResponseException`), never message text. The preflight header check scans the first 1024
+bytes for `%PDF-` instead of testing the first four, so a real PDF that carries leading
+bytes before its header is not rejected as "not a PDF".
+
+Ingestion is idempotent. A batch whose events already landed is acknowledged with 204 and
+not written again, so a transport retry cannot duplicate `session.start` or any other
+event. The comparison key is built in memory from allowlisted fields only and is never
+stored, so the log stays content-free.
+
+Regenerate the refusal fixtures with `python3 tests/fixtures/generate_failure_fixtures.py`
+(a valid PDF, a PDF with leading bytes before its header, a non-PDF, an empty file, a
+truncated document and a genuine password protected PDF made with pypdf, a fixture tool
+only).
+
 ## Explicit private preview only
 
 Normal `npm run build` produces a backend-free static app. Normal dev/preview has no
@@ -142,6 +182,10 @@ LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:diagnostics:sustained
 LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:diagnostics:transport
 LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:mobile
 LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:layout
+LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:fit
+LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:textpanel
+LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:sticky
+LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:uploads
 ```
 
 Diagnostics smoke requires enabled private preview and an existing event log (browser
