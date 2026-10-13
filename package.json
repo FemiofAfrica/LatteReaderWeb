@@ -11,6 +11,7 @@
     "test:mobile": "node scripts/mobile-smoke.mjs",
     "test:layout": "node scripts/layout-sweep.mjs",
     "test:fit": "node scripts/preview-fit-smoke.mjs",
+    "test:sticky": "node scripts/sticky-header-smoke.mjs",
     "test:textpanel": "node scripts/preview-text-smoke.mjs",
     "test:workers": "node scripts/worker-audit.mjs",
     "test:diagnostics": "node scripts/diagnostics-smoke.mjs",

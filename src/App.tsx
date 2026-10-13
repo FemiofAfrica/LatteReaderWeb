@@ -89,6 +89,7 @@ function App() {
   const extractionWorkerRef = useRef<Worker | null>(null)
   const speechRef = useRef(new BrowserSpeechEngine())
   const mobileBarRef = useRef<HTMLElement>(null)
+  const topbarRef = useRef<HTMLElement>(null)
   const previewScrollRef = useRef<HTMLDivElement>(null)
   const waitTimerRef = useRef<number | null>(null)
   const endHandlerRef = useRef<() => void>(() => undefined)
@@ -226,6 +227,24 @@ function App() {
     observer.observe(node)
     return () => observer.disconnect()
     // Re-runs once the bar actually mounts, which happens with the first document.
+  }, [isMobile, Boolean(documentState)])
+
+  // The pinned preview header sits directly beneath the top bar, so it is offset by the bar's
+  // real measured height rather than a guess: the bar can wrap or gain the filename row, and
+  // the two must stay flush without a gap or an overlap. Follows the bottom bar's pattern.
+  useEffect(() => {
+    if (!isMobile) {
+      document.documentElement.style.removeProperty('--mobile-topbar-height')
+      return
+    }
+    const node = topbarRef.current
+    if (!node) return
+    const apply = () => document.documentElement.style.setProperty('--mobile-topbar-height', `${Math.ceil(node.getBoundingClientRect().height)}px`)
+    apply()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(apply)
+    observer.observe(node)
+    return () => observer.disconnect()
   }, [isMobile, Boolean(documentState)])
 
   // Mobile opens the preview at a fit-to-width zoom so a whole line of text is readable
@@ -520,7 +539,7 @@ function App() {
   return (
     <main className="ambient-shell">
       <section className="reader-deck" data-panel={activePanel} aria-label="LatteReader PDF console">
-        <header className="topbar">
+        <header className="topbar" ref={topbarRef}>
           <div className="brand-lockup">
             <span className="coffee-mark" aria-hidden="true"><span /></span>
             <span><strong>LatteReader</strong><small>Open a PDF · Extract · Listen</small></span>

@@ -14,6 +14,8 @@
   --cream: #f2eade;
   --muted: #aa9b8c;
   --border: rgba(255, 255, 255, 0.09);
+  /* Opaque surface for chrome pinned over scrolling content: content must never show through. */
+  --chrome: #2c221a;
   color-scheme: dark;
 }
 
@@ -245,11 +247,27 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
     min-height: 100vh;
     border: 0;
     border-radius: 0;
+    /* An ancestor with hidden overflow becomes the sticky scrollport, which silently defeats
+       position: sticky for everything inside it. At this width the deck is unclipped anyway
+       (no border, no radius), so it stops being a scroll container and lets the viewport be
+       the scrollport the pinned chrome attaches to. */
+    overflow: visible;
     /* Reserve room for the fixed bar so it can never cover page content. It grows with
        the bar's measured height and the device's bottom safe-area inset. */
     padding-bottom: calc(var(--mobile-bar-height, 88px) + env(safe-area-inset-bottom, 0px));
   }
-  .topbar { align-items: flex-start; }
+  /* Pinned chrome. The product bar stays against the top of the viewport while the page
+     scrolls, and the preview header sits flush beneath it. The offset is the bar's measured
+     height, so a wrapped bar or a filename row can never leave a gap or an overlap. Both are
+     painted with an opaque surface so the content scrolling underneath is never visible
+     through them, and neither adds a border, so the two share exactly one divider line. */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    align-items: flex-start;
+    background: var(--chrome);
+  }
   .brand-lockup small, .document-status { display: none; }
 
   .workspace { display: block; overflow: visible; }
@@ -265,7 +283,19 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   .reader-deck[data-panel="preview"] .preview { display: flex; }
   .reader-deck[data-panel="preview"] .control-rail { display: none; }
 
-  .preview-header { height: auto; min-height: 43px; flex-wrap: wrap; gap: 8px; padding: 9px 14px; }
+  /* Pinned directly beneath the product bar. The offset is the bar's real measured height
+     (set from the top bar's own box), so the two are flush with no gap when the bar wraps. */
+  .preview-header {
+    position: sticky;
+    top: var(--mobile-topbar-height, 72px);
+    z-index: 29;
+    height: auto;
+    min-height: 43px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 9px 14px;
+    background: var(--chrome);
+  }
   .preview-zoom { min-width: 170px; flex: 1 1 170px; }
 
   .mobile-bar {
