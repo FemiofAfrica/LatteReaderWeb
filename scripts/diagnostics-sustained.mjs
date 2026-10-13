@@ -86,8 +86,12 @@ try {
   assert(finalStatus.includes('private live'), `Strip did not read live after a successful extraction: ${finalStatus}`)
 
   const rows = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
-  const session = rows.filter(r => r.event === 'extraction.start' && r.count === PAGE_COUNT && r.sessionId).map(r => r.sessionId).at(-1)
-  assert(session, 'No 341-page extraction.start recorded')
+  // This smoke always uploads the fixture it just built, so its session has an upload.replaced
+  // with the same page count. A live tester session that restored an equally large document
+  // would otherwise be picked as "the last" one and hide this run's own lifecycle events.
+  const uploaded = new Set(rows.filter(r => r.event === 'upload.replaced' && r.count === PAGE_COUNT && r.sessionId).map(r => r.sessionId))
+  const session = rows.filter(r => r.event === 'extraction.start' && r.count === PAGE_COUNT && r.sessionId && uploaded.has(r.sessionId)).map(r => r.sessionId).at(-1)
+  assert(session, 'No 341-page upload and extraction.start recorded')
   const mine = rows.filter(r => r.sessionId === session)
   const pages = mine.filter(r => r.event === 'extraction.progress').map(r => r.page)
   assert(mine.some(r => r.event === 'extraction.start' && r.count === PAGE_COUNT), 'extraction.start missing')

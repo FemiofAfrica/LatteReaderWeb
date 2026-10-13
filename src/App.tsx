@@ -11,6 +11,7 @@ import {
   type CurrentDocumentRecord,
 } from './domain/currentDocumentStore'
 import { emptyDocumentState, type DocumentState, type ExtractionMessage } from './domain/document'
+import { computeFitZoom, MAX_PREVIEW_ZOOM, MIN_PREVIEW_ZOOM } from './domain/fit'
 import {
   advancePage,
   buildReadingSteps,
@@ -88,6 +89,7 @@ function App() {
   const extractionWorkerRef = useRef<Worker | null>(null)
   const speechRef = useRef(new BrowserSpeechEngine())
   const mobileBarRef = useRef<HTMLElement>(null)
+  const previewScrollRef = useRef<HTMLDivElement>(null)
   const waitTimerRef = useRef<number | null>(null)
   const endHandlerRef = useRef<() => void>(() => undefined)
   const runRef = useRef({ pages: 0, started: 0 })
@@ -99,7 +101,12 @@ function App() {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
   const [documentState, setDocumentState] = useState<DocumentState | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
+  // `zoom` is the reader's stored zoom setting. On mobile the preview opens at a fit-to-width
+  // value held separately in `fitZoom`, so the fit is a view value that never overwrites the
+  // saved setting. `manualZoom` marks a zoom the reader set by hand, which is never re-fitted.
   const [zoom, setZoom] = useState(100)
+  const [fitZoom, setFitZoom] = useState<number | null>(null)
+  const [manualZoom, setManualZoom] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [readScope, setReadScope] = useState<ReadScope>('document')
   const [voicePlan, setVoicePlan] = useState<DocumentVoicePlan | null>(null)
@@ -221,6 +228,37 @@ function App() {
     // Re-runs once the bar actually mounts, which happens with the first document.
   }, [isMobile, Boolean(documentState)])
 
+  // Mobile opens the preview at a fit-to-width zoom so a whole line of text is readable
+  // without sideways scrolling. The value is recomputed whenever the container changes
+  // (rotation, resize, switching to the Preview panel) but never once the reader has set a
+  // zoom by hand: that override stays for the rest of the session.
+  useEffect(() => {
+    if (!isMobile || manualZoom || !pdf) return
+    const node = previewScrollRef.current
+    if (!node) return
+    let cancelled = false
+    let observer: ResizeObserver | undefined
+
+    const apply = async () => {
+      const scroller = previewScrollRef.current
+      if (!scroller) return
+      const page = await pdf.getPage(currentPage)
+      if (cancelled) return
+      const style = window.getComputedStyle(scroller)
+      const available = scroller.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      const nativeWidth = page.getViewport({ scale: 1 }).width
+      if (available <= 0 || nativeWidth <= 0) return
+      setFitZoom(computeFitZoom(available, nativeWidth))
+    }
+
+    void apply()
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => { void apply() })
+      observer.observe(node)
+    }
+    return () => { cancelled = true; observer?.disconnect() }
+  }, [isMobile, manualZoom, pdf, currentPage, activePanel])
+
   const openPicker = () => fileInputRef.current?.click()
 
   const activateDocument = async (record: CurrentDocumentRecord, document: PDFDocumentProxy) => {
@@ -236,6 +274,9 @@ function App() {
     setUploadError('')
     setCurrentPage(Math.min(Math.max(record.reader.currentPage, 1), document.numPages))
     setZoom(record.reader.zoom)
+    // A newly opened document starts from the stored setting again, so the mobile fit applies.
+    setFitZoom(null)
+    setManualZoom(false)
     setSpeed(record.reader.speed)
     setReadScope(record.reader.readScope)
     setVoicePlan(record.voicePlan)
@@ -396,6 +437,8 @@ function App() {
   const extractionPercent = documentState?.pageCount
     ? Math.round((documentState.extractedPages / documentState.pageCount) * 100)
     : 0
+  // What is actually rendered: the mobile fit while it is active, otherwise the stored setting.
+  const renderZoom = isMobile && !manualZoom && fitZoom !== null ? fitZoom : zoom
 
   const read = () => {
     if (!documentState || documentState.scanned || !speechRef.current.available) return
@@ -453,6 +496,8 @@ function App() {
       setVoicePlan(null)
       setCurrentPage(1)
       setZoom(100)
+      setFitZoom(null)
+      setManualZoom(false)
       setSpeed(1)
       setReadScope('document')
       setAnalysisMessage('Analyze the extracted text to find character labels and dialogue.')
@@ -591,17 +636,22 @@ function App() {
                 <header className="preview-header">
                   <span><strong>Preview</strong> Page {currentPage}</span>
                   {isMobile ? (
-                    <label className="dial-control preview-zoom">Zoom <output>{zoom}%</output><input aria-label="Preview zoom" type="range" min="50" max="180" step="10" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label>
+                    <div className="preview-zoom-controls">
+                      <label className="dial-control preview-zoom">Zoom <output>{renderZoom}%</output><input aria-label="Preview zoom" type="range" min={MIN_PREVIEW_ZOOM} max={MAX_PREVIEW_ZOOM} step="1" value={renderZoom} onChange={(event) => { setManualZoom(true); setZoom(Number(event.target.value)) }} /></label>
+                      <button type="button" className="fit-width-button" onClick={() => setManualZoom(false)}>Fit width</button>
+                    </div>
                   ) : (
-                    <span className="zoom-readout">{zoom}% zoom</span>
+                    <span className="zoom-readout">{renderZoom}% zoom</span>
                   )}
                 </header>
-                <div className="preview-scroll">
-                  {pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={zoom} /> : <p>Loading preview...</p>}
-                  <section className="page-text" aria-label={`Selectable text from page ${currentPage}`} tabIndex={0}>
-                    <h2>Selectable page text</h2>
-                    <p>{currentText || (documentState.extraction === 'complete' ? 'No readable text was found on this page.' : 'Extracting text...')}</p>
-                  </section>
+                <div className="preview-scroll" ref={previewScrollRef}>
+                  {pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={renderZoom} /> : <p>Loading preview...</p>}
+                  <details className="page-text-disclosure">
+                    <summary>Select text to read only that part</summary>
+                    <div className="page-text" aria-label={`Selectable text from page ${currentPage}`} tabIndex={0}>
+                      <p>{currentText || (documentState.extraction === 'complete' ? 'No readable text was found on this page.' : 'Extracting text...')}</p>
+                    </div>
+                  </details>
                 </div>
               </section>
             </div>

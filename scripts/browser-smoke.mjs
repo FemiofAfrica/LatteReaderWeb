@@ -54,7 +54,8 @@ try {
   console.error(await page.locator('body').innerText())
   throw error
 }
-await page.getByText('LATTEREADER TEST STORY').waitFor({ timeout: 15000 })
+// The transcript sits behind a disclosure now, so it is present but not visible until opened.
+await page.getByText('LATTEREADER TEST STORY').waitFor({ timeout: 15000, state: 'attached' })
 
 const metadata = await page.locator('.document-metrics').innerText()
 check(metadata.includes('2'), 'Page count did not render as 2')
@@ -64,7 +65,7 @@ check(canvasSize.width > 0 && canvasSize.height > 0, 'PDF page canvas did not re
 
 await page.getByRole('button', { name: 'Next page' }).click()
 check((await page.getByLabel('Current page').innerText()).startsWith('2'), 'Next page did not navigate to page 2')
-await page.getByText('SECOND PAGE').waitFor()
+await page.getByText('SECOND PAGE').waitFor({ state: 'attached' })
 await page.getByRole('button', { name: 'Previous page' }).click()
 check((await page.getByLabel('Current page').innerText()).startsWith('1'), 'Previous page did not return to page 1')
 

@@ -43,6 +43,8 @@ const bar = () => page.locator('.mobile-bar')
 const playButton = () => bar().getByRole('button', { name: /^(Start|Pause|Resume) reading$/ })
 const stopButton = () => bar().getByRole('button', { name: 'Stop reading' })
 const statusText = () => page.locator('.visually-hidden[role=status]').innerText()
+const textPanel = () => page.locator('.page-text-disclosure')
+const textSummary = () => page.locator('.page-text-disclosure summary')
 
 await page.goto(baseURL, { waitUntil: 'networkidle' })
 await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor()
@@ -50,7 +52,7 @@ await page.locator('input[type=file]').setInputFiles(fixture)
 // Extraction status lives in the Document panel, which is hidden while Preview is the
 // default mobile panel, so read the document text rather than a visible label.
 await page.waitForFunction(() => document.body.textContent?.includes('Extraction complete'), undefined, { timeout: 20000 })
-await page.locator('.page-text').getByText('LATTEREADER TEST STORY').waitFor({ timeout: 20000 })
+await page.locator('.page-text').getByText('LATTEREADER TEST STORY').waitFor({ timeout: 20000, state: 'attached' })
 
 // 1. The bar exists with all four panels and a pinned transport.
 check(await bar().isVisible(), 'Mobile bottom bar is not visible at 390x844')
@@ -67,6 +69,37 @@ check(await page.getByRole('tab', { name: 'Preview' }).getAttribute('aria-select
 check(await page.locator('#panel-preview').isVisible(), 'Preview panel is not visible by default')
 check(!(await page.locator('#panel-document').isVisible()), 'Document panel rendered alongside the default panel')
 await page.screenshot({ path: path.join(root, 'tests/artifacts/mobile-panel-preview.png') })
+
+// 2b. The selectable text is a disclosure: closed by default so the PDF page leads the
+// preview, labelled with one plain line, and bounded while open.
+check(await textPanel().count() === 1, 'The selectable text disclosure is missing')
+check(await textPanel().evaluate((node) => !node.hasAttribute('open')), 'The selectable text panel is open by default')
+check((await textSummary().innerText()).trim() === 'Select text to read only that part', `The disclosure label reads "${(await textSummary().innerText()).trim()}"`)
+const previewOrder = await page.evaluate(() => {
+  const canvas = document.querySelector('.page-stage canvas').getBoundingClientRect()
+  const panel = document.querySelector('.page-text-disclosure').getBoundingClientRect()
+  return { canvasTop: Math.round(canvas.top), panelTop: Math.round(panel.top), collapsedHeight: Math.round(panel.height), viewportHeight: window.innerHeight }
+})
+check(previewOrder.canvasTop < previewOrder.panelTop, 'The text panel does not follow the PDF page in the mobile preview')
+check(previewOrder.collapsedHeight <= 0.12 * previewOrder.viewportHeight, `The collapsed text panel is ${previewOrder.collapsedHeight}px tall`)
+
+// Pointer opens it, and the open region stays inside half the viewport.
+await textSummary().click()
+check(await textPanel().evaluate((node) => node.hasAttribute('open')), 'Clicking the disclosure did not expand it')
+const openPanel = await page.evaluate(() => {
+  const region = document.querySelector('.page-text')
+  return { height: Math.round(region.getBoundingClientRect().height), viewportHeight: window.innerHeight }
+})
+check(openPanel.height <= openPanel.viewportHeight / 2 + 1, `The expanded text region is ${openPanel.height}px of a ${openPanel.viewportHeight}px viewport`)
+
+// Keyboard closes and reopens it: Enter and Space both toggle the disclosure.
+await textSummary().focus()
+await page.keyboard.press('Enter')
+check(!(await textPanel().evaluate((node) => node.hasAttribute('open'))), 'Enter did not collapse the disclosure')
+await page.keyboard.press('Space')
+check(await textPanel().evaluate((node) => node.hasAttribute('open')), 'Space did not expand the disclosure')
+await page.keyboard.press('Space')
+check(!(await textPanel().evaluate((node) => node.hasAttribute('open'))), 'Space did not collapse the disclosure again')
 
 // 3. Each panel switches in turn; only the selected one renders.
 await page.getByRole('tab', { name: 'Document' }).click()
@@ -139,9 +172,11 @@ await page.waitForTimeout(600)
 check(await page.evaluate(() => window.__spoken) === spokenAtStop, 'An utterance started after Stop was pressed')
 check(await playButton().getAttribute('aria-label') === 'Start reading', 'Stop did not return playback to the ready state')
 
-// 5b. Selection reading still reads only the selection.
+// 5b. Selection reading still reads only the selection. The transcript is behind a
+// disclosure, so open it before selecting, as a reader would.
 await page.getByRole('tab', { name: 'Preview' }).click()
 await page.waitForFunction(() => document.querySelector('.preview-header')?.textContent?.includes('Page 1'))
+if (!(await textPanel().evaluate((node) => node.hasAttribute('open')))) await textSummary().click()
 await page.evaluate(() => {
   const paragraph = document.querySelector('.page-text p')
   const range = document.createRange()
@@ -158,10 +193,29 @@ const selectionRead = await page.evaluate(() => window.__utterances.at(-1))
 check(selectionRead.length < 40 && !selectionRead.includes('ALICE'), `Selection reading read more than the selection: "${selectionRead}"`)
 await stopButton().click()
 await page.evaluate(() => window.getSelection().removeAllRanges())
+await textSummary().click()
 
 // 6. No horizontal overflow at the phone width.
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
 check(overflow <= 0, `Mobile layout overflowed horizontally by ${overflow}px`)
+
+// 6b. The preview fits the page to the container, so a line is readable without sideways
+// scrolling at the default mobile view.
+const fit = await page.evaluate(() => {
+  const scroller = document.querySelector('.preview-scroll')
+  const canvas = document.querySelector('.page-stage canvas')
+  const style = getComputedStyle(scroller)
+  const readout = document.querySelector('.preview-zoom output')
+  return {
+    readout: (readout?.textContent ?? '').trim(),
+    contentWidth: scroller.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+    canvasWidth: Math.round(canvas.getBoundingClientRect().width),
+    scrollsSideways: scroller.scrollWidth > scroller.clientWidth,
+  }
+})
+check(!fit.scrollsSideways, 'The mobile preview still scrolls sideways to read a line')
+check(fit.canvasWidth <= fit.contentWidth, `The page (${fit.canvasWidth}px) is wider than the preview content (${fit.contentWidth}px)`)
+check(fit.readout !== '100%', `The mobile zoom readout still reads ${fit.readout} instead of a fitted value`)
 
 // 7. Desktop keeps the console and has no bottom bar.
 await page.setViewportSize({ width: 1440, height: 1000 })
@@ -180,15 +234,23 @@ console.log(JSON.stringify({
   status: 'passed',
   spoken,
   readTexts,
+  previewOrder,
+  openPanel,
+  fit,
   verified: [
     'mobile bottom bar with four panel selectors plus play and stop',
     'only one panel renders at a time, preview by default',
     'all four panels switchable',
+    'selectable text is a disclosure, closed by default, labelled with one plain line',
+    'the disclosure opens and closes by pointer and by keyboard (Enter and Space)',
+    'the PDF page leads the preview and the collapsed panel stays under 12% of the viewport',
+    'the expanded transcript stays inside half the viewport',
     'one play press reads continuously to the end of the document',
     'preview follows the page being read',
     'the stored reading position follows playback',
     'stop cancels with no further utterances',
-    'selection reading still reads only the selection',
+    'selection reading inside the open disclosure still reads only the selection',
+    'the preview opens fitted to the container, so no sideways scrolling is needed',
     'no horizontal overflow at 390x844',
     'desktop keeps the console with no bottom bar',
   ],

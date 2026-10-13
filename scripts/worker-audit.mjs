@@ -122,11 +122,12 @@ try {
   assert.deepEqual(initialPdfRequests, [], 'PDF code was fetched before a document was opened')
   await page.locator('input[type=file]').setInputFiles(path.join(root, 'tests/fixtures/latte-reader-text-fixture.pdf'))
   await page.getByText('Extraction complete', { exact: true }).waitFor({ timeout: 15000 })
-  await page.getByText('LATTEREADER TEST STORY').waitFor()
+  // The transcript sits behind a disclosure now, so its text is present but not visible.
+  await page.getByText('LATTEREADER TEST STORY').waitFor({ state: 'attached' })
   if (compatibility) {
     await page.waitForFunction(() => document.querySelector('canvas')?.width > 0)
     await page.getByRole('button', { name: 'Next page' }).click()
-    await page.getByText('SECOND PAGE').waitFor()
+    await page.getByText('SECOND PAGE').waitFor({ state: 'attached' })
     await page.getByLabel('Preview zoom').fill('120')
     await page.waitForTimeout(500)
     assert.equal(await page.locator('.page-stage .error-copy').count(), 0)

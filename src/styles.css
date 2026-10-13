@@ -154,11 +154,19 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .preview-header { height: 43px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 11px; }
 .preview-header strong { margin-right: 10px; color: var(--caramel); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
 .zoom-readout { color: var(--butter); font: 500 11px DM Mono, monospace; }
+.preview-zoom-controls { flex: 1 1 260px; display: flex; align-items: flex-end; gap: 10px; }
+.fit-width-button { min-height: 34px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(232,197,110,.12); color: var(--cream); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.fit-width-button:hover { background: rgba(232,197,110,.22); }
 .preview-scroll { min-height: 0; flex: 1; overflow: auto; padding: 18px; background: radial-gradient(circle at top, #34281e, #1d1611 65%); scrollbar-color: var(--crema) transparent; }
 .page-stage { min-height: 420px; display: grid; place-items: start center; }
 .page-stage canvas { max-width: none; background: white; box-shadow: 0 18px 42px rgba(0,0,0,.48); }
-.page-text { width: min(800px, 100%); margin: 18px auto 0; padding: 18px 20px; border: 1px solid var(--border); border-radius: 12px; background: rgba(34,26,19,.86); }
-.page-text h2 { margin: 0 0 8px; color: var(--caramel); font-size: 10px; letter-spacing: .17em; text-transform: uppercase; }
+/* The selectable text is a disclosure, closed by default, so the PDF page leads the preview
+   and a long transcript can never fill the screen. Expanded, it scrolls inside a bound of
+   half the viewport rather than growing without limit. */
+.page-text-disclosure { width: min(800px, 100%); margin: 18px auto 0; border: 1px solid var(--border); border-radius: 12px; background: rgba(34,26,19,.86); }
+.page-text-disclosure > summary { padding: 12px 16px; color: var(--caramel); font-size: 11px; font-weight: 700; letter-spacing: .04em; cursor: pointer; }
+.page-text-disclosure > summary:focus-visible { outline: 3px solid var(--butter); outline-offset: 3px; border-radius: 8px; }
+.page-text { max-height: 50vh; overflow: auto; padding: 0 16px 16px; scrollbar-color: var(--crema) transparent; }
 .page-text p { margin: 0; color: var(--foam); font: 400 13px/1.7 Georgia, serif; white-space: pre-wrap; }
 .page-text ::selection, .page-text::selection { background: var(--caramel); color: var(--espresso); }
 
