@@ -53,7 +53,10 @@ LATTE_PRIVATE_DIAGNOSTICS=1 npm run preview -- --host 127.0.0.1 --port 4176 --st
 ```
 
 The Vite serve-only plugin injects a marker at runtime; the browser also requires a
-loopback hostname. Same-origin POST `/__latte_diagnostics/events` requires matching
+loopback hostname. The preview matches the request path, so a tester URL that carries a
+query string (`/?build=<sha>`) still receives the marker; only the origin-form index path
+(`/` or `/index.html`, query/fragment ignored) is marked, never an asset or absolute-form
+target. Same-origin POST `/__latte_diagnostics/events` requires matching
 Origin, loopback Host/socket, JSON, at most 16 KiB and 25 strictly validated events.
 Unknown keys/events or wrong event-specific fields reject the entire batch without
 writing. Non-loopback server configuration refuses startup. No GET log endpoint,

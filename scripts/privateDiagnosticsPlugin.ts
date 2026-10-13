@@ -6,6 +6,13 @@ import { validateEvent, type DiagnosticEvent } from '../src/diagnostics/schema'
 export const SERVER_LIMIT = 1000
 export const REQUEST_LIMIT = 16384
 const marker = '<meta name="latte-private-diagnostics" content="enabled">'
+// Preview URLs carry tester query strings (`/?build=<sha>`), so match the request
+// path only. Absolute-form request targets are deliberately not treated as the
+// document request; only an origin-form index path receives the marker.
+export function isIndexDocumentRequest(url: string | undefined): boolean {
+  const path = (url ?? '').split('?')[0].split('#')[0]
+  return path === '/' || path === '/index.html'
+}
 export function privateDiagnosticsPlugin(enabled: boolean): Plugin {
   const root = process.cwd()
   const log = resolve(root, '.runtime/diagnostics/events.jsonl')
@@ -65,7 +72,7 @@ export function privateDiagnosticsPlugin(enabled: boolean): Plugin {
     configurePreviewServer(server) {
       server.middlewares.use(middleware)
       server.middlewares.use((req, res, next) => {
-        if (!enabled || (req.url !== '/' && req.url !== '/index.html')) return next()
+        if (!enabled || !isIndexDocumentRequest(req.url)) return next()
         if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.localAddress ?? '')) { res.statusCode = 403; res.end(); return }
         res.setHeader('Content-Type', 'text/html'); res.setHeader('Cache-Control', 'no-store')
         res.end(readFileSync(resolve(root, 'dist/index.html'), 'utf8').replace('</head>', `${marker}</head>`))
