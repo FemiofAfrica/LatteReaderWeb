@@ -1,8 +1,15 @@
 /// <reference lib="webworker" />
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { TextItem } from 'pdfjs-dist/types/src/display/api'
 
-GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
+// PDF.js's automatic worker setup reads window.location, which does not
+// exist in this extraction worker. Supply a real nested worker explicitly
+// instead of letting that path fall back to a LoopbackPort in this realm.
+GlobalWorkerOptions.workerPort = new Worker(
+  pdfWorkerUrl,
+  { type: 'module' },
+)
 
 type Request = { type: 'extract'; bytes: ArrayBuffer }
 type Response =

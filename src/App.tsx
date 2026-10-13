@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from 'react'
-import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { PdfCanvas } from './components/PdfCanvas'
 import { analyzeDocument, chunkText, type DocumentVoicePlan } from './domain/analysis'
 import {
@@ -12,8 +12,6 @@ import {
 import { emptyDocumentState, type DocumentState, type ExtractionMessage } from './domain/document'
 import { initialPlaybackState, playbackReducer, type ReadScope } from './domain/playback'
 import { BrowserSpeechEngine } from './speech/SpeechEngine'
-
-GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
 
 const formatNumber = new Intl.NumberFormat()
 const formatBytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -152,7 +150,7 @@ function App() {
       }
       const document = await validateAndReplaceCurrentDocument(
         record,
-        async (validationBytes) => getDocument({ data: validationBytes }).promise,
+        async (validationBytes) => (await import('./pdf/loadPdf')).loadPdf(validationBytes),
       )
       await activateDocument(record, document)
     } catch {
@@ -166,7 +164,7 @@ function App() {
       try {
         const record = await loadCurrentDocument()
         if (!record || cancelled) return
-        const document = await getDocument({ data: record.bytes.slice(0) }).promise
+        const document = await (await import('./pdf/loadPdf')).loadPdf(record.bytes.slice(0))
         if (!cancelled) await activateDocument(record, document)
       } catch {
         if (!cancelled) setUploadError('The saved PDF could not be restored. You can delete it and open another PDF.')

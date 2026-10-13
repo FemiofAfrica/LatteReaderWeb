@@ -7,9 +7,18 @@ const fixture = path.join(root, 'tests/fixtures/latte-reader-text-fixture.pdf')
 const baseURL = process.env.LATTE_READER_URL ?? 'http://127.0.0.1:4173/'
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
-page.on('console', (message) => console.log(`[browser:${message.type()}] ${message.text()}`))
-page.on('pageerror', (error) => console.error(`[browser:error] ${error.message}`))
+const fakeWorkerWarnings = []
+const initialRequests = []
+page.on('request', (request) => initialRequests.push(request.url()))
+page.on('console', (message) => {
+  console.log(`[browser:${message.type()}] ${message.text()}`)
+  if (message.text().includes('Setting up fake worker')) fakeWorkerWarnings.push(message.text())
+})
 const failures = []
+page.on('pageerror', (error) => {
+  console.error(`[browser:error] ${error.message}`)
+  failures.push(`Uncaught browser error: ${error.message}`)
+})
 const check = (condition, message) => {
   if (!condition) failures.push(message)
 }
@@ -36,6 +45,8 @@ await page.goto(baseURL, { waitUntil: 'networkidle' })
 await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor()
 check(await page.getByText('Your current PDF is saved only in this browser', { exact: false }).isVisible(), 'Local persistence copy is not visible')
 
+const initialPdfRequests = initialRequests.filter((url) => /pdfjs|\/assets\/(?:pdf[-.]|loadPdf[-.])|\/pdf\/loadPdf/.test(url))
+check(initialPdfRequests.length === 0, `PDF modules loaded before opening a document: ${initialPdfRequests.join(', ')}`)
 await page.locator('input[type=file]').setInputFiles(fixture)
 try {
   await page.getByText('Extraction complete', { exact: true }).waitFor({ timeout: 15000 })
@@ -133,6 +144,7 @@ page.once('dialog', (dialog) => dialog.accept())
 await page.getByRole('button', { name: 'Delete local data' }).click()
 await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor()
 
+check(fakeWorkerWarnings.length === 0, 'PDF.js fell back to a fake worker')
 await browser.close()
 if (failures.length) {
   console.error(JSON.stringify({ status: 'failed', failures }, null, 2))
@@ -140,11 +152,13 @@ if (failures.length) {
 }
 console.log(JSON.stringify({
   status: 'passed',
+  initialPdfRequests,
+  fakeWorkerWarnings,
   fixture,
   metadata: metadata.replace(/\n/g, ' | '),
   canvasSize,
   desktopLayout,
   narrowLayout,
   storedDocument,
-  verified: ['empty state', 'local PDF load', 'incremental extraction', 'canvas rendering', 'page navigation', 'zoom', 'speaker analysis', 'invalid upload preservation', 'reload restore', 'playback states', 'desktop and tablet overflow', 'one IndexedDB current-document slot', 'local data deletion'],
+  verified: ['empty state', 'lazy PDF loading', 'no fake worker fallback', 'local PDF load', 'incremental extraction', 'canvas rendering', 'page navigation', 'zoom', 'speaker analysis', 'invalid upload preservation', 'reload restore', 'mocked playback states', 'desktop and tablet overflow', 'one IndexedDB current-document slot', 'local data deletion'],
 }, null, 2))
