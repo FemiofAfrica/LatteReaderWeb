@@ -6,10 +6,11 @@ export const EVENTS = [
   'extraction.start', 'extraction.progress', 'extraction.complete', 'extraction.fail',
   'renderer.start', 'renderer.complete', 'renderer.fail', 'analysis.start', 'analysis.complete', 'analysis.fail',
   'speech.start', 'speech.pause', 'speech.resume', 'speech.stop', 'speech.end', 'speech.error',
+  'transport.fail', 'transport.recover',
   'window.error', 'window.rejection',
 ] as const
 export type EventName = typeof EVENTS[number]
-export const ERROR_CODES = ['unknown', 'type', 'range', 'syntax', 'abort', 'pdf', 'worker', 'storage', 'speech', 'render'] as const
+export const ERROR_CODES = ['unknown', 'type', 'range', 'syntax', 'abort', 'pdf', 'worker', 'storage', 'speech', 'render', 'http', 'timeout', 'network'] as const
 export type ErrorCode = typeof ERROR_CODES[number]
 export interface DiagnosticEvent {
   timestamp: string

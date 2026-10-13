@@ -13,14 +13,36 @@ downloads the current sanitized JSON buffer. **Clear diagnostics** clears its in
 buffer and unsent queue; it does not erase events already received by private preview.
 Reload starts a new session and empty buffer. Neither PDF deletion nor diagnostics clear
 changes the other's storage. Retention: last 250 events per browser; last 1,000 events
-in the private runtime file. Unsent transport is capped at 250; batches are at most 25,
-with a three-second timeout. Failed batches are dropped, not retried indefinitely.
+in the private runtime file, of which at most 200 may be `extraction.progress` so per-page
+progress can never evict lifecycle/failure history. Per-page progress is coalesced to the
+first page, the final page and roughly twenty evenly spaced pages regardless of document
+size — a rate, not every page. Unsent
+transport is capped at 250; batches are at most 25, with a three-second timeout. A failed
+batch is re-queued and retried with backoff at most four times, then dropped.
 This is best-effort testing evidence, not an audit trail; rapid close/reload may lose
 pending events. Diagnostics must never delay document operations.
+
+## Truthful transport state
+
+The strip is derived from real send outcomes, never a single stale flag. `private live`
+means the last send succeeded; `live retrying` means a batch is being retried (degraded);
+`live unavailable` means sustained failures, or failures with no prior success. Any later
+successful send returns the strip to `private live`; a failure is never shown as permanent
+after successful ingestion. The expanded panel shows the last successful send time, the
+consecutive-failure count and a fixed reason code (`none`, `http-client`, `http-server`,
+`timeout`, `network`, `unknown`). Transport transitions also record edge-triggered
+`transport.fail`/`transport.recover` events (one per transition, never per attempt).
 
 ## Wizzy: live evidence on Linux
 
 Exact file: `/root/Projects/LatteReaderWeb/.runtime/diagnostics/events.jsonl`
+
+Server-side rejections and client aborts are recorded **content-free** in
+`/root/Projects/LatteReaderWeb/.runtime/diagnostics/ingest-rejections.jsonl` — timestamp,
+numeric status and a fixed reason code (`not-loopback`, `bad-host`, `method`, `origin`,
+`content-type`, `too-large`, `bad-json`, `invalid-batch`, `client-abort`). Never a payload,
+URL or header value; bounded to the last 500 entries. A `client-abort` entry is the
+signature of an intermittent connection failure mid-send.
 
 Use `read_file` on that exact path, or filter it without reading any document store:
 
@@ -39,8 +61,10 @@ and approximate time (not PDF text). Filter `sessionId` by that prefix, order by
 - `analysis.start` → `analysis.complete`/`analysis.fail`: local character analysis.
 - `speech.*`: control/engine lifecycle; an event is not proof of audible output.
 - `window.error`/`window.rejection`: uncaught browser failure; only a fixed error category survives.
-- No live entries? Check the strip for `live unavailable`, then service health and tunnel;
-  use local export rather than weakening the origin or loopback guards.
+- No live entries? Read the strip's state and reason code, then
+  `.runtime/diagnostics/ingest-rejections.jsonl` (`client-abort` points at a dropped
+  connection, a 4xx reason at a rejected batch), then service health and tunnel; use local
+  export rather than weakening the origin or loopback guards.
 
 ## Explicit private preview only
 
@@ -68,7 +92,8 @@ Current Linux preview is managed by transient systemd unit
 Use `systemctl status latte-reader-private-preview --no-pager` and
 `curl --fail http://127.0.0.1:4176/` for health. Restart only that unit after rebuilding.
 For intentional server-log clearing, stop that unit, remove only
-`.runtime/diagnostics/events.jsonl`, then start it; do not touch document storage or tunnels.
+`.runtime/diagnostics/events.jsonl` (and, if desired, `ingest-rejections.jsonl`), then start
+it; do not touch document storage or tunnels.
 `.runtime/` is Git-ignored and not served as a static directory.
 
 ## Verification
@@ -81,6 +106,8 @@ LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:browser
 LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:workers
 npm run test:compatibility
 npm run test:diagnostics
+LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:diagnostics:sustained
+LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:diagnostics:transport
 ```
 
 Diagnostics smoke requires enabled private preview and an existing event log (browser

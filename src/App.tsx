@@ -13,6 +13,7 @@ import { emptyDocumentState, type DocumentState, type ExtractionMessage } from '
 import { initialPlaybackState, playbackReducer, type ReadScope } from './domain/playback'
 import { BrowserSpeechEngine } from './speech/SpeechEngine'
 import { recordEvent } from './diagnostics/diagnostics'
+import { shouldRecordProgress } from './diagnostics/progress'
 import { DiagnosticsStatus } from './components/DiagnosticsStatus'
 
 const formatNumber = new Intl.NumberFormat()
@@ -95,11 +96,16 @@ function App() {
     recordEvent('extraction.start', { count: document.numPages })
     try {
       const workerBytes = record.bytes.slice(0)
+      const progressTrack = { lastPage: 0 }
       const worker = new Worker(new URL('./workers/pdf.worker.ts', import.meta.url), { type: 'module' })
       extractionWorkerRef.current = worker
       worker.onmessage = (event: MessageEvent<ExtractionMessage>) => {
         const message = event.data
-        if (message.type === 'page') recordEvent('extraction.progress', { page: message.pageNumber })
+        // Coalesce per-page progress: first page, final page and evenly spaced samples only.
+        if (message.type === 'page' && shouldRecordProgress(message.pageNumber, document.numPages, progressTrack)) {
+          progressTrack.lastPage = message.pageNumber
+          recordEvent('extraction.progress', { page: message.pageNumber })
+        }
         if (message.type === 'complete') recordEvent('extraction.complete', { count: document.numPages, durationMs: performance.now() - extractionStart })
         if (message.type === 'error') recordEvent('extraction.fail', { errorCode: 'worker', durationMs: performance.now() - extractionStart })
         setDocumentState((current) => {

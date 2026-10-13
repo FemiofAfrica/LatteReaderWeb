@@ -10,6 +10,8 @@
     "test:browser": "node scripts/browser-smoke.mjs",
     "test:workers": "node scripts/worker-audit.mjs",
     "test:diagnostics": "node scripts/diagnostics-smoke.mjs",
+    "test:diagnostics:sustained": "node scripts/diagnostics-sustained.mjs",
+    "test:diagnostics:transport": "node scripts/diagnostics-transport.mjs",
     "test:compatibility": "node scripts/compatibility-smoke.mjs",
     "typecheck": "tsc -b --pretty false",
     "build": "tsc -b && vite build",

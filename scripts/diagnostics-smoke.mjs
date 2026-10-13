@@ -24,6 +24,14 @@ try {
   assert.equal((await post(JSON.stringify([sample]), 'https://evil.example')).status, 403)
   assert.equal((await post('x'.repeat(17000))).status, 413)
   assert.equal(readFileSync(log, 'utf8'), before, 'Rejected ingestion changed log')
+  // Server-side rejection diagnostics: status + fixed reason code only, never payload/url data.
+  const rejectLog = resolve('.runtime/diagnostics/ingest-rejections.jsonl')
+  const rejections = readFileSync(rejectLog, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)
+  assert(rejections.some(n => n.reason === 'invalid-batch' && n.status === 400), 'no invalid-batch rejection recorded')
+  assert(rejections.some(n => n.reason === 'origin' && n.status === 403), 'no origin rejection recorded')
+  assert(rejections.some(n => n.reason === 'too-large' && n.status === 413), 'no too-large rejection recorded')
+  assert(rejections.every(n => Object.keys(n).every(k => ['timestamp', 'status', 'reason'].includes(k))), 'rejection has extra fields')
+  assert(!/PRIVATE|evil\.example|filename/.test(readFileSync(rejectLog, 'utf8')), 'rejection log leaked payload data')
   const page = await browser.newPage()
   const requests = []
   page.on('request', r => { if (r.method() === 'POST') requests.push({ url: r.url(), body: r.postData() }) })
@@ -76,6 +84,8 @@ try {
   const mine = events.filter(e => e.sessionId === session)
   assert(!JSON.stringify(mine).match(/PRIVATE|filename|selected|Alice|Bob|stack|credential|latte-reader-text-fixture|https:\/\//))
   assert(expected.every(name => exported.some(e => e.event === name)))
+  const progressEvents = mine.filter(e => e.event === 'extraction.progress').length
+  assert(progressEvents <= 5, `progress stream not coalesced: ${progressEvents} events for a 2-page document`)
   assert(requests.every(r => r.url === `${origin}/__latte_diagnostics/events` && !r.body.includes('PRIVATE')))
   await page.getByRole('button', { name: 'Clear diagnostics' }).click()
   await page.getByText('0/250 in memory', { exact: false }).waitFor()
@@ -111,5 +121,5 @@ try {
   assert.equal(await prod.locator('meta[name="latte-private-diagnostics"]').count(), 0)
   assert.equal(prodPosts.length, 0)
   assert(!readFileSync(resolve('dist/index.html'), 'utf8').includes('latte-private-diagnostics'))
-  console.log(JSON.stringify({ status: 'passed', log, session, restoredSession: restored.sessionId, visibleStatus, runtimeEvents: mine.length, eventNames: [...new Set(mine.map(e => e.event))], verified: ['rejected sensitive/unknown ingestion', 'origin guard', 'request size limit', 'exact runtime log readback', 'export privacy', 'clear', 'real invalid PDF', 'real renderer exception', 'actual unhandled error/rejection', 'actual worker load failure', 'static production no telemetry'], speech: 'mock synthesis events only; no audible speech claimed' }, null, 2))
+  console.log(JSON.stringify({ status: 'passed', log, session, restoredSession: restored.sessionId, visibleStatus, runtimeEvents: mine.length, progressEvents, rejectionsRecorded: rejections.length, eventNames: [...new Set(mine.map(e => e.event))], verified: ['rejected sensitive/unknown ingestion', 'origin guard', 'request size limit', 'server-side rejection diagnostics (status + reason only)', 'progress coalescing', 'exact runtime log readback', 'export privacy', 'clear', 'real invalid PDF', 'real renderer exception', 'actual unhandled error/rejection', 'actual worker load failure', 'static production no telemetry'], speech: 'mock synthesis events only; no audible speech claimed' }, null, 2))
 } finally { production?.kill(); await browser.close() }
