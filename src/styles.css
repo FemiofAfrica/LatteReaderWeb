@@ -176,6 +176,43 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .dial-control output { font-size: 11px; }
 .dial-control input { grid-column: 1 / -1; width: 100%; accent-color: var(--caramel); }
 
+/* Mobile-only bottom bar. Hidden above the mobile breakpoint so the desktop console
+   keeps the control rail, preview pane and transport footer exactly as before. */
+.mobile-bar { display: none; }
+.mobile-bar .panel-icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.mobile-tabs { min-width: 0; flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 4px; }
+.mobile-tabs button {
+  position: relative;
+  min-width: 54px;
+  min-height: 48px;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+/* The selected panel is marked for assistive tech (aria-selected) and by shape, not colour alone. */
+.mobile-tabs button.active { border-color: rgba(232,197,110,.5); background: rgba(232,197,110,.16); color: var(--cream); }
+.mobile-tabs button.active .panel-icon { stroke: var(--butter); }
+.mobile-tabs button.active::after { position: absolute; right: 24%; bottom: 3px; left: 24%; height: 3px; border-radius: 2px; content: ''; background: var(--butter); }
+.mobile-transport { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+.mobile-transport button { width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.07); border-radius: 50%; background: linear-gradient(#4a382a, #302319); box-shadow: 0 3px 4px rgba(0,0,0,.45); }
+.mobile-transport svg { width: 22px; fill: currentColor; stroke: none; }
+.mobile-transport .play-button { width: 54px; height: 54px; border-radius: 14px; background: linear-gradient(#dfba78, var(--caramel)); color: var(--espresso); box-shadow: 0 5px 12px rgba(96,63,30,.5); }
+.mobile-transport .play-button svg { width: 24px; }
+.mobile-page { color: var(--muted); font: 500 10px DM Mono, monospace; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.bezel-dial { margin-top: 12px; }
+
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; white-space: nowrap !important; }
 
 .diagnostics-panel { padding: 9px 20px; border-top: 1px solid var(--border); color: var(--muted); font: 11px/1.6 DM Mono, monospace; }
@@ -196,23 +233,54 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 
 @media (max-width: 780px) {
   .ambient-shell { padding: 0; }
-  .reader-deck { min-height: 100vh; border: 0; border-radius: 0; }
+  .reader-deck {
+    min-height: 100vh;
+    border: 0;
+    border-radius: 0;
+    /* Reserve room for the fixed bar so it can never cover page content. It grows with
+       the bar's measured height and the device's bottom safe-area inset. */
+    padding-bottom: calc(var(--mobile-bar-height, 88px) + env(safe-area-inset-bottom, 0px));
+  }
   .topbar { align-items: flex-start; }
   .brand-lockup small, .document-status { display: none; }
-  .workspace { display: flex; flex-direction: column; overflow: visible; }
-  .control-rail { max-height: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; overflow: visible; border-right: 0; border-bottom: 1px solid var(--border); }
-  .bezel { margin: 0; }
-  .preview { min-height: 620px; }
-  .transport { position: sticky; bottom: 0; z-index: 5; grid-template-columns: auto minmax(80px,1fr) 92px; background: rgba(34,26,19,.97); backdrop-filter: blur(12px); }
-  .playback-readout { display: none; }
+
+  .workspace { display: block; overflow: visible; }
+  .control-rail { display: block; padding: 12px; border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
+  .bezel { margin: 0 0 12px; }
+
+  /* One panel at a time: the rail shows only the selected group, or only the preview. */
+  .control-rail [data-panel] { display: none; }
+  .reader-deck[data-panel="document"] .control-rail [data-panel="document"],
+  .reader-deck[data-panel="read"] .control-rail [data-panel="read"],
+  .reader-deck[data-panel="voices"] .control-rail [data-panel="voices"] { display: block; }
+  .preview { display: none; min-height: 72vh; }
+  .reader-deck[data-panel="preview"] .preview { display: flex; }
+  .reader-deck[data-panel="preview"] .control-rail { display: none; }
+
+  .preview-header { height: auto; min-height: 43px; flex-wrap: wrap; gap: 8px; padding: 9px 14px; }
+  .preview-zoom { min-width: 170px; flex: 1 1 170px; }
+
+  .mobile-bar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 20;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+    background: rgba(34,26,19,.97);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 -10px 24px rgba(0,0,0,.45);
+  }
 }
 
 @media (max-width: 520px) {
-  .control-rail { grid-template-columns: 1fr; }
-  .transport { grid-template-columns: auto 1fr 1fr; }
-  .waveform { display: none; }
   .topbar { padding-inline: 12px; }
   .primary-button { padding-inline: 12px; }
+  .mobile-tabs button { min-width: 50px; font-size: 8px; }
+  .mobile-page { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

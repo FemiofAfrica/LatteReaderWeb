@@ -6,6 +6,8 @@ export const EVENTS = [
   'extraction.start', 'extraction.progress', 'extraction.complete', 'extraction.fail',
   'renderer.start', 'renderer.complete', 'renderer.fail', 'analysis.start', 'analysis.complete', 'analysis.fail',
   'speech.start', 'speech.pause', 'speech.resume', 'speech.stop', 'speech.end', 'speech.error',
+  // One bounded aggregate per playback run; page advance is never logged per page.
+  'playback.complete',
   'transport.fail', 'transport.recover',
   'window.error', 'window.rejection',
 ] as const
@@ -38,6 +40,7 @@ export function validateEvent(value: unknown): value is DiagnosticEvent {
   const event = v.event as EventName
   const allowed = new Set<string>()
   if (/^(upload|restore|extraction|analysis)\.(start|validated|replaced|complete)$/.test(event)) allowed.add('count')
+  if (event === 'playback.complete') allowed.add('count')
   if (event === 'extraction.progress' || event.startsWith('renderer.')) allowed.add('page')
   if (event.startsWith('renderer.')) allowed.add('zoom')
   if (/\.(complete|replaced|fail|end)$/.test(event)) allowed.add('durationMs')

@@ -8,6 +8,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:browser": "node scripts/browser-smoke.mjs",
+    "test:mobile": "node scripts/mobile-smoke.mjs",
+    "test:layout": "node scripts/layout-sweep.mjs",
     "test:workers": "node scripts/worker-audit.mjs",
     "test:diagnostics": "node scripts/diagnostics-smoke.mjs",
     "test:diagnostics:sustained": "node scripts/diagnostics-sustained.mjs",

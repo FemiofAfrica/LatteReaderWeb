@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { APP_VERSION, classifyError, validateEvent, type DiagnosticEvent } from './schema'
-import { BUFFER_LIMIT, DiagnosticBuffer, diagnostics, recordEvent, transportEnabled } from './diagnostics'
+import { BUFFER_LIMIT, DiagnosticBuffer, diagnostics, isTransportEvent, recordEvent, transportEnabled } from './diagnostics'
 const entry = (): DiagnosticEvent => ({ timestamp: new Date().toISOString(), sessionId: crypto.randomUUID(), version: APP_VERSION, event: 'session.start', severity: 'info' })
 afterEach(() => { diagnostics.clear(); document.head.innerHTML = ''; vi.unstubAllGlobals(); vi.useRealTimers() })
 describe('content-free diagnostics', () => {
@@ -89,5 +89,14 @@ describe('content-free diagnostics', () => {
     recordEvent('session.start')
     await vi.advanceTimersByTimeAsync(4000)
     expect(diagnostics.status()).toBe('private live')
+  })
+
+  it('treats transport lifecycle events as delivery state, not application errors', () => {
+    // A retry hiccup must not be counted as an application failure during triage.
+    expect(isTransportEvent('transport.fail')).toBe(true)
+    expect(isTransportEvent('transport.recover')).toBe(true)
+    for (const event of ['renderer.fail', 'upload.fail', 'window.error', 'window.rejection', 'speech.error']) {
+      expect(isTransportEvent(event)).toBe(false)
+    }
   })
 })

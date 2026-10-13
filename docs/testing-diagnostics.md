@@ -16,7 +16,7 @@ changes the other's storage. Retention: last 250 events per browser; last 1,000 
 in the private runtime file, of which at most 200 may be `extraction.progress` so per-page
 progress can never evict lifecycle/failure history. Per-page progress is coalesced to the
 first page, the final page and roughly twenty evenly spaced pages regardless of document
-size — a rate, not every page. Unsent
+size. That is a rate, not every page. Unsent
 transport is capped at 250; batches are at most 25, with a three-second timeout. A failed
 batch is re-queued and retried with backoff at most four times, then dropped.
 This is best-effort testing evidence, not an audit trail; rapid close/reload may lose
@@ -33,12 +33,29 @@ consecutive-failure count and a fixed reason code (`none`, `http-client`, `http-
 `timeout`, `network`, `unknown`). Transport transitions also record edge-triggered
 `transport.fail`/`transport.recover` events (one per transition, never per attempt).
 
+The strip summary separates the two things a tester reports together, so triage cannot
+confuse them: the transport state (`local only`, `live connecting`, `private live`,
+`live retrying`, `live unavailable`) and a count of genuine application error events.
+A transport retry shows as `live retrying` and still reads `no errors`; only real
+application failures increment the count, which uses correct singular (`1 error`) and
+plural (`2 errors`) wording. Transport lifecycle events are never counted as application
+errors. The expanded panel shows both lines explicitly.
+
+## Reading scope and continuous playback
+
+Play reads from the current page to the end of the document and moves the preview and the
+stored reading position with it. Reading scope is stored as `document` (continuous) or
+`page` (this page only); stored records are migrated from the old page-only default to
+continuous on load, so a document saved before this change no longer restarts page by page.
+Page advance records **one** bounded aggregate `playback.complete` event per run (page count
+and duration), never an event per page, so a long document cannot flood retention.
+
 ## Wizzy: live evidence on Linux
 
 Exact file: `/root/Projects/LatteReaderWeb/.runtime/diagnostics/events.jsonl`
 
 Server-side rejections and client aborts are recorded **content-free** in
-`/root/Projects/LatteReaderWeb/.runtime/diagnostics/ingest-rejections.jsonl` — timestamp,
+`/root/Projects/LatteReaderWeb/.runtime/diagnostics/ingest-rejections.jsonl` records timestamp,
 numeric status and a fixed reason code (`not-loopback`, `bad-host`, `method`, `origin`,
 `content-type`, `too-large`, `bad-json`, `invalid-batch`, `client-abort`). Never a payload,
 URL or header value; bounded to the last 500 entries. A `client-abort` entry is the
@@ -96,6 +113,21 @@ For intentional server-log clearing, stop that unit, remove only
 it; do not touch document storage or tunnels.
 `.runtime/` is Git-ignored and not served as a static directory.
 
+## Mobile layout
+
+Below the single 780px breakpoint the console becomes a phone layout: a bottom bar with a
+panel switcher for Document, Read, Voices and Preview plus play and stop always visible.
+Only one panel renders at a time and Preview is the default, so the page and the play button
+sit together; the selected panel is marked for assistive tech with `aria-selected` and by a
+shape marker, not colour alone. The bar is fixed to the bottom, reserves its own space with a
+measured height and `env(safe-area-inset-bottom)`, and grows rather than clipping. Above the
+breakpoint the desktop console is unchanged and no bar is rendered.
+
+```sh
+npm run test:mobile   # bar, panel switching, continuous playback at 390x844
+npm run test:layout   # 360, 390, 414, 768, 1024, 1440 overflow and bar-over-content sweep
+```
+
 ## Verification
 
 ```sh
@@ -108,6 +140,8 @@ npm run test:compatibility
 npm run test:diagnostics
 LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:diagnostics:sustained
 LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:diagnostics:transport
+LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:mobile
+LATTE_READER_URL=http://127.0.0.1:4176/ npm run test:layout
 ```
 
 Diagnostics smoke requires enabled private preview and an existing event log (browser

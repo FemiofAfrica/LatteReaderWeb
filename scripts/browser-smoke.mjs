@@ -98,6 +98,8 @@ check((await page.locator('.playback-readout strong').innerText()).toLowerCase()
 
 const desktopLayout = await page.evaluate(() => ({ body: document.body.scrollWidth, viewport: innerWidth }))
 check(desktopLayout.body <= desktopLayout.viewport, `Desktop body overflowed: ${desktopLayout.body} > ${desktopLayout.viewport}`)
+check(await page.locator('.mobile-bar').count() === 0, 'Mobile bottom bar is present in the desktop layout')
+check(await page.locator('.transport').isVisible(), 'Desktop transport footer is missing')
 await page.screenshot({ path: path.join(root, 'tests/artifacts/desktop-loaded.png'), fullPage: true })
 
 await page.setViewportSize({ width: 1024, height: 768 })
@@ -111,6 +113,7 @@ const narrowLayout = await page.evaluate(() => ({
 check(narrowLayout.body <= narrowLayout.viewport, `Narrow body overflowed: ${narrowLayout.body} > ${narrowLayout.viewport}`)
 check(narrowLayout.topbarRight <= narrowLayout.viewport, 'Top bar is clipped at 1024px')
 check(narrowLayout.transportRight <= narrowLayout.viewport, 'Transport is clipped at 1024px')
+check(await page.locator('.mobile-bar').count() === 0, 'Mobile bottom bar is present at 1024px')
 await page.screenshot({ path: path.join(root, 'tests/artifacts/tablet-loaded.png'), fullPage: true })
 
 const storedDocument = await page.evaluate(async () => {
@@ -160,5 +163,5 @@ console.log(JSON.stringify({
   desktopLayout,
   narrowLayout,
   storedDocument,
-  verified: ['empty state', 'lazy PDF loading', 'no fake worker fallback', 'local PDF load', 'incremental extraction', 'canvas rendering', 'page navigation', 'zoom', 'speaker analysis', 'invalid upload preservation', 'reload restore', 'mocked playback states', 'desktop and tablet overflow', 'one IndexedDB current-document slot', 'local data deletion'],
+  verified: ['empty state', 'lazy PDF loading', 'no fake worker fallback', 'local PDF load', 'incremental extraction', 'canvas rendering', 'page navigation', 'zoom', 'speaker analysis', 'invalid upload preservation', 'reload restore', 'mocked playback states', 'desktop and tablet overflow', 'no mobile bottom bar on desktop', 'one IndexedDB current-document slot', 'local data deletion'],
 }, null, 2))

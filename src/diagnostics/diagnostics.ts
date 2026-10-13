@@ -7,6 +7,11 @@ const RETRY_BACKOFF_MS = [250, 750, 1500, 3000]
 export const TRANSPORT_REASONS = ['none', 'http-client', 'http-server', 'timeout', 'network', 'unknown'] as const
 export type TransportReason = typeof TRANSPORT_REASONS[number]
 export type TransportState = 'local only' | 'live connecting' | 'private live' | 'live retrying' | 'live unavailable'
+// Transport lifecycle events describe the delivery path, not an application failure.
+export const TRANSPORT_EVENTS = ['transport.fail', 'transport.recover'] as const
+export function isTransportEvent(event: string): boolean {
+  return (TRANSPORT_EVENTS as readonly string[]).includes(event)
+}
 export interface TransportRecord {
   state: TransportState
   lastSuccessAt: number

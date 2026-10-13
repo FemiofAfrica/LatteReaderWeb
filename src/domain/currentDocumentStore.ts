@@ -1,6 +1,8 @@
 import type { DocumentVoicePlan } from './analysis'
 import type { ReadScope } from './playback'
 
+export const CURRENT_SCHEMA_VERSION = 2
+
 export interface PersistedReaderState {
   currentPage: number
   zoom: number
@@ -9,7 +11,7 @@ export interface PersistedReaderState {
 }
 
 export interface CurrentDocumentRecord {
-  schemaVersion: 1
+  schemaVersion: typeof CURRENT_SCHEMA_VERSION
   id: string
   name: string
   size: number
@@ -18,6 +20,12 @@ export interface CurrentDocumentRecord {
   bytes: ArrayBuffer
   reader: PersistedReaderState
   voicePlan: DocumentVoicePlan | null
+}
+
+// Schema 1 stored `readScope: 'page'` as its default, which is the old page-by-page
+// behaviour. Migrating to schema 2 lifts every stored document to continuous reading.
+interface LegacyCurrentDocumentRecordV1 extends Omit<CurrentDocumentRecord, 'schemaVersion'> {
+  schemaVersion: 1
 }
 
 const DATABASE_NAME = 'latte-reader-local'
@@ -49,14 +57,33 @@ async function openDatabase(): Promise<IDBDatabase> {
   return requestResult(request)
 }
 
+/**
+ * Reads any previously stored record into the current schema. A schema-1 record keeps its
+ * position, zoom, speed and voice plan but its reading scope becomes continuous, so a
+ * document stored before this change no longer restarts in page-only mode.
+ */
+export function migrateCurrentDocument(record: unknown): CurrentDocumentRecord | null {
+  if (!record || typeof record !== 'object') return null
+  const candidate = record as { schemaVersion?: unknown }
+  if (candidate.schemaVersion === CURRENT_SCHEMA_VERSION) return record as CurrentDocumentRecord
+  if (candidate.schemaVersion === 1) {
+    const legacy = record as LegacyCurrentDocumentRecordV1
+    return {
+      ...legacy,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      reader: { ...legacy.reader, readScope: 'document' },
+    }
+  }
+  return null
+}
+
 export async function loadCurrentDocument(): Promise<CurrentDocumentRecord | null> {
   const database = await openDatabase()
   try {
     const transaction = database.transaction(STORE_NAME, 'readonly')
     const result = await requestResult(transaction.objectStore(STORE_NAME).get(CURRENT_KEY))
     await transactionDone(transaction)
-    const record = result as CurrentDocumentRecord | undefined
-    return record?.schemaVersion === 1 ? record : null
+    return migrateCurrentDocument(result)
   } finally {
     database.close()
   }
@@ -91,8 +118,8 @@ export async function updateCurrentDocument(
   try {
     const transaction = database.transaction(STORE_NAME, 'readwrite')
     const store = transaction.objectStore(STORE_NAME)
-    const current = await requestResult(store.get(CURRENT_KEY)) as CurrentDocumentRecord | undefined
-    if (current?.schemaVersion === 1) store.put({ ...current, ...update }, CURRENT_KEY)
+    const current = migrateCurrentDocument(await requestResult(store.get(CURRENT_KEY)))
+    if (current) store.put({ ...current, ...update }, CURRENT_KEY)
     await transactionDone(transaction)
   } finally {
     database.close()

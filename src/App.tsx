@@ -4,13 +4,22 @@ import { PdfCanvas } from './components/PdfCanvas'
 import { analyzeDocument, chunkText, type DocumentVoicePlan } from './domain/analysis'
 import {
   clearCurrentDocument,
+  CURRENT_SCHEMA_VERSION,
   loadCurrentDocument,
   updateCurrentDocument,
   validateAndReplaceCurrentDocument,
   type CurrentDocumentRecord,
 } from './domain/currentDocumentStore'
 import { emptyDocumentState, type DocumentState, type ExtractionMessage } from './domain/document'
-import { initialPlaybackState, playbackReducer, type ReadScope } from './domain/playback'
+import {
+  advancePage,
+  buildReadingSteps,
+  hasReadableText,
+  initialPlaybackState,
+  playbackReducer,
+  type PlaybackState,
+  type ReadScope,
+} from './domain/playback'
 import { BrowserSpeechEngine } from './speech/SpeechEngine'
 import { recordEvent } from './diagnostics/diagnostics'
 import { shouldRecordProgress } from './diagnostics/progress'
@@ -19,12 +28,44 @@ import { DiagnosticsStatus } from './components/DiagnosticsStatus'
 const formatNumber = new Intl.NumberFormat()
 const formatBytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
+// Single breakpoint shared by the mobile bar's CSS and this component's media query.
+const MOBILE_QUERY = '(max-width: 780px)'
+// Bounded wait for the next page's text while extraction is still running, so reading
+// continues as text arrives instead of failing.
+const PENDING_TEXT_TIMEOUT_MS = 15000
+const PENDING_TEXT_POLL_MS = 250
+
+type MobilePanel = 'document' | 'read' | 'voices' | 'preview'
+
+const MOBILE_PANELS: { id: MobilePanel; label: string; paths: string[] }[] = [
+  { id: 'document', label: 'Document', paths: ['M7 3h7l5 5v13H7z', 'M14 3v5h5'] },
+  { id: 'read', label: 'Read', paths: ['M4 5h7v14H4z', 'M13 5h7v14h-7z'] },
+  { id: 'voices', label: 'Voices', paths: ['M12 3a3.5 3.5 0 013.5 3.5v4a3.5 3.5 0 01-7 0v-4A3.5 3.5 0 0112 3z', 'M5.5 11a6.5 6.5 0 0013 0'] },
+  { id: 'preview', label: 'Preview', paths: ['M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z', 'M12 14.5A2.5 2.5 0 1112 9.5a2.5 2.5 0 010 5z'] },
+]
+
 function selectionText(): string {
   const selection = window.getSelection()
   const parent = selection?.anchorNode instanceof Element
     ? selection.anchorNode
     : selection?.anchorNode?.parentElement
   return parent?.closest('.page-text') ? selection?.toString().trim() ?? '' : ''
+}
+
+function useMediaQuery(query: string): boolean {
+  const read = () => typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(query).matches
+  const [matches, setMatches] = useState(read)
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+    const list = window.matchMedia(query)
+    const update = () => setMatches(list.matches)
+    update()
+    list.addEventListener('change', update)
+    return () => list.removeEventListener('change', update)
+  }, [query])
+  return matches
 }
 
 function Icon({ name }: { name: 'back' | 'next' | 'stop' | 'play' | 'pause' }) {
@@ -38,35 +79,154 @@ function Icon({ name }: { name: 'back' | 'next' | 'stop' | 'play' | 'pause' }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24"><path d={paths[name]} /></svg>
 }
 
+function PanelIcon({ paths }: { paths: string[] }) {
+  return <svg className="panel-icon" aria-hidden="true" viewBox="0 0 24 24">{paths.map((d) => <path key={d} d={d} />)}</svg>
+}
+
 function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const extractionWorkerRef = useRef<Worker | null>(null)
   const speechRef = useRef(new BrowserSpeechEngine())
+  const mobileBarRef = useRef<HTMLElement>(null)
+  const waitTimerRef = useRef<number | null>(null)
+  const endHandlerRef = useRef<() => void>(() => undefined)
+  const runRef = useRef({ pages: 0, started: 0 })
+  // The page currently being read, written synchronously so a page that finishes before the
+  // next render still advances correctly.
+  const readingPageRef = useRef(0)
+  const isMobile = useMediaQuery(MOBILE_QUERY)
+
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
   const [documentState, setDocumentState] = useState<DocumentState | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [zoom, setZoom] = useState(100)
   const [speed, setSpeed] = useState(1)
-  const [readScope, setReadScope] = useState<ReadScope>('page')
+  const [readScope, setReadScope] = useState<ReadScope>('document')
   const [voicePlan, setVoicePlan] = useState<DocumentVoicePlan | null>(null)
   const [analysisMessage, setAnalysisMessage] = useState('Analyze the extracted text to find character labels and dialogue.')
   const [uploadError, setUploadError] = useState('')
   const [isRestoring, setIsRestoring] = useState(true)
+  const [activePanel, setActivePanel] = useState<MobilePanel>('preview')
   const [playback, dispatchPlayback] = useReducer(playbackReducer, initialPlaybackState)
 
-  useEffect(() => {
-    speechRef.current.onEnd(() => dispatchPlayback({ type: 'END' }))
-    return () => speechRef.current.stop()
-  }, [])
+  // Latest values, read by the speech callback that is registered only once.
+  const playbackRef = useRef<PlaybackState>(playback)
+  playbackRef.current = playback
+  const documentRef = useRef<DocumentState | null>(documentState)
+  documentRef.current = documentState
+  const speedRef = useRef(speed)
+  speedRef.current = speed
+  const voicePlanRef = useRef<DocumentVoicePlan | null>(voicePlan)
+  voicePlanRef.current = voicePlan
+  const currentPageRef = useRef(currentPage)
+  currentPageRef.current = currentPage
 
+  const clearWait = () => {
+    if (waitTimerRef.current !== null) { window.clearTimeout(waitTimerRef.current); waitTimerRef.current = null }
+  }
+
+  // Read one page aloud. The preview and the persisted position both follow this page.
+  const speakPage = (pageNumber: number) => {
+    const document = documentRef.current
+    const text = document?.pages[pageNumber - 1] ?? ''
+    if (!document || !hasReadableText(text)) return
+    const plan = voicePlanRef.current
+    const scopedPlan = plan ? { ...plan, segments: plan.segments.filter((segment) => segment.pageNumber === pageNumber) } : null
+    if (runRef.current.pages === 0) runRef.current.started = performance.now()
+    runRef.current.pages += 1
+    readingPageRef.current = pageNumber
+    setCurrentPage(pageNumber)
+    speechRef.current.speak({ text: chunkText(text).join(' '), rate: speedRef.current, plan: scopedPlan })
+  }
+
+  const completeRun = () => {
+    const pages = runRef.current.pages
+    if (pages > 1) recordEvent('playback.complete', { count: pages, durationMs: performance.now() - runRef.current.started })
+    runRef.current = { pages: 0, started: 0 }
+    readingPageRef.current = 0
+    dispatchPlayback({ type: 'END' })
+  }
+
+  const hasPendingPages = (document: DocumentState, afterPage: number) => {
+    for (let page = afterPage + 1; page <= document.pageCount; page += 1) {
+      if (page > document.extractedPages) return true
+    }
+    return false
+  }
+
+  const waitForPendingText = () => {
+    const started = performance.now()
+    const tick = () => {
+      const state = playbackRef.current
+      const document = documentRef.current
+      if (state.status !== 'playing' || !document) return
+      const next = advancePage(document.pages, state, readingPageRef.current)
+      if (next !== null) {
+        dispatchPlayback({ type: 'ADVANCE', page: next, totalPages: document.pageCount })
+        speakPage(next)
+        return
+      }
+      if (document.extraction === 'complete' || performance.now() - started > PENDING_TEXT_TIMEOUT_MS) { completeRun(); return }
+      waitTimerRef.current = window.setTimeout(tick, PENDING_TEXT_POLL_MS)
+    }
+    waitTimerRef.current = window.setTimeout(tick, PENDING_TEXT_POLL_MS)
+  }
+
+  // Called when the engine finishes the current page's utterance.
+  const handleSpeechEnd = () => {
+    const state = playbackRef.current
+    const document = documentRef.current
+    const currentPage = readingPageRef.current
+    if (state.status !== 'playing') return
+    if (state.scope !== 'document' || !document) { completeRun(); return }
+    const next = advancePage(document.pages, state, currentPage)
+    if (next !== null) {
+      dispatchPlayback({ type: 'ADVANCE', page: next, totalPages: document.pageCount })
+      speakPage(next)
+      return
+    }
+    if (document.extraction !== 'complete' && hasPendingPages(document, currentPage)) {
+      waitForPendingText()
+      return
+    }
+    completeRun()
+  }
+  endHandlerRef.current = handleSpeechEnd
+
+  useEffect(() => {
+    speechRef.current.onEnd(() => endHandlerRef.current())
+    return () => {
+      clearWait()
+      speechRef.current.stop()
+    }
+  }, [])
 
   useEffect(() => () => {
     extractionWorkerRef.current?.terminate()
   }, [])
 
+  useEffect(() => {
+    if (!isMobile) {
+      document.documentElement.style.removeProperty('--mobile-bar-height')
+      return
+    }
+    const node = mobileBarRef.current
+    if (!node) return
+    const apply = () => document.documentElement.style.setProperty('--mobile-bar-height', `${Math.ceil(node.getBoundingClientRect().height)}px`)
+    apply()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(apply)
+    observer.observe(node)
+    return () => observer.disconnect()
+    // Re-runs once the bar actually mounts, which happens with the first document.
+  }, [isMobile, Boolean(documentState)])
+
   const openPicker = () => fileInputRef.current?.click()
 
   const activateDocument = async (record: CurrentDocumentRecord, document: PDFDocumentProxy) => {
+    clearWait()
+    runRef.current = { pages: 0, started: 0 }
+    readingPageRef.current = 0
     speechRef.current.stop()
     dispatchPlayback({ type: 'STOP' })
     extractionWorkerRef.current?.terminate()
@@ -159,7 +319,7 @@ function App() {
     try {
       const bytes = await file.arrayBuffer()
       const record: CurrentDocumentRecord = {
-        schemaVersion: 1,
+        schemaVersion: CURRENT_SCHEMA_VERSION,
         id: `${file.name}:${file.size}:${file.lastModified}`,
         name: file.name,
         size: file.size,
@@ -250,21 +410,30 @@ function App() {
       return
     }
 
+    clearWait()
+    runRef.current = { pages: 0, started: performance.now() }
+
+    // Selection reading keeps its own path and reads only the selection.
     const selected = selectionText()
-    const scope = selected ? 'selection' : readScope
-    const text = selected || (scope === 'page' ? currentText : documentState.pages.join('\n'))
-    if (!text.trim()) return
-    const scopedPlan = voicePlan && !selected ? {
-      ...voicePlan,
-      segments: scope === 'page'
-        ? voicePlan.segments.filter((segment) => segment.pageNumber === currentPage)
-        : voicePlan.segments,
-    } : null
-    speechRef.current.speak({ text: chunkText(text).join(' '), rate: speed, plan: scopedPlan })
-    dispatchPlayback({ type: 'PLAY', scope })
+    if (selected) {
+      speechRef.current.speak({ text: chunkText(selected).join(' '), rate: speedRef.current, plan: null })
+      runRef.current.pages = 1
+      readingPageRef.current = currentPage
+      dispatchPlayback({ type: 'PLAY', scope: 'selection', page: currentPage })
+      return
+    }
+
+    const steps = buildReadingSteps(documentState.pages, currentPage, readScope)
+    const first = steps[0]
+    if (!first) return
+    dispatchPlayback({ type: 'PLAY', scope: readScope, page: first.pageNumber })
+    speakPage(first.pageNumber)
   }
 
   const stop = () => {
+    clearWait()
+    runRef.current = { pages: 0, started: 0 }
+    readingPageRef.current = 0
     speechRef.current.stop()
     dispatchPlayback({ type: 'STOP' })
   }
@@ -272,6 +441,9 @@ function App() {
   const deleteLocalData = async () => {
     recordEvent('delete.start')
     try {
+      clearWait()
+      runRef.current = { pages: 0, started: 0 }
+      readingPageRef.current = 0
       speechRef.current.stop()
       extractionWorkerRef.current?.terminate()
       if (pdf) await pdf.cleanup()
@@ -282,7 +454,7 @@ function App() {
       setCurrentPage(1)
       setZoom(100)
       setSpeed(1)
-      setReadScope('page')
+      setReadScope('document')
       setAnalysisMessage('Analyze the extracted text to find character labels and dialogue.')
       setUploadError('Saved PDF, voice plan, settings, and reading position deleted from this browser.')
       dispatchPlayback({ type: 'STOP' })
@@ -298,9 +470,11 @@ function App() {
     : documentState.extraction === 'error' ? 'Extraction error'
     : `Extracting page ${documentState.extractedPages} of ${documentState.pageCount}`
 
+  const playLabel = playback.status === 'playing' ? 'Pause reading' : playback.status === 'paused' ? 'Resume reading' : 'Start reading'
+
   return (
     <main className="ambient-shell">
-      <section className="reader-deck" aria-label="LatteReader PDF console">
+      <section className="reader-deck" data-panel={activePanel} aria-label="LatteReader PDF console">
         <header className="topbar">
           <div className="brand-lockup">
             <span className="coffee-mark" aria-hidden="true"><span /></span>
@@ -347,7 +521,7 @@ function App() {
           <>
             <div className="workspace">
               <aside className="control-rail" aria-label="Document controls">
-                <section className="bezel">
+                <section className="bezel" id="panel-document" data-panel="document">
                   <h2>Document</h2>
                   <div className="document-metrics">
                     <span><small>Pages</small><strong>{documentState.pageCount || '...'}</strong></span>
@@ -380,24 +554,27 @@ function App() {
                   }}>Delete local data</button>
                 </section>
 
-                <section className="bezel">
+                <section className="bezel" id="panel-read" data-panel="read">
                   <h2>Read</h2>
                   <fieldset className="segmented-control">
                     <legend>Reading scope</legend>
                     {(['page', 'document'] as ReadScope[]).map((scope) => (
-                      <label key={scope}><input type="radio" name="scope" checked={readScope === scope} onChange={() => setReadScope(scope)} /><span>{scope === 'page' ? 'Page' : 'Full'}</span></label>
+                      <label key={scope}><input type="radio" name="scope" checked={readScope === scope} onChange={() => setReadScope(scope)} /><span>{scope === 'page' ? 'This page only' : 'To the end'}</span></label>
                     ))}
                   </fieldset>
-                  <p className="panel-copy">Select text in the page transcript to read only that selection.</p>
+                  <p className="panel-copy">Play reads from the current page to the end of the document. Select text in the page transcript to read only that selection.</p>
+                  {isMobile && (
+                    <label className="dial-control bezel-dial">Speed <output>{speed.toFixed(2)}x</output><input aria-label="Reading speed" type="range" min="0.5" max="2" step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /></label>
+                  )}
                 </section>
 
-                <section className="bezel">
+                <section className="bezel" id="panel-voices" data-panel="voices">
                   <h2>Voice engine</h2>
                   <div className="engine-readout"><span className="status-led ready" aria-hidden="true" /><strong>Browser voice</strong></div>
                   <p className="panel-copy">Uses SpeechSynthesis with voices installed in this browser. No Kokoro model is active yet.</p>
                 </section>
 
-                <section className="bezel">
+                <section className="bezel" data-panel="voices">
                   <h2>Character voices</h2>
                   <button className="key-button" onClick={analyze} disabled={!documentState.characterCount}>Analyze Characters</button>
                   <p className="panel-copy" aria-live="polite">{analysisMessage}</p>
@@ -410,8 +587,15 @@ function App() {
                 </section>
               </aside>
 
-              <section className="preview" aria-label="PDF preview">
-                <header className="preview-header"><span><strong>Preview</strong> Page {currentPage}</span><span className="zoom-readout">{zoom}% zoom</span></header>
+              <section className="preview" id="panel-preview" aria-label="PDF preview">
+                <header className="preview-header">
+                  <span><strong>Preview</strong> Page {currentPage}</span>
+                  {isMobile ? (
+                    <label className="dial-control preview-zoom">Zoom <output>{zoom}%</output><input aria-label="Preview zoom" type="range" min="50" max="180" step="10" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label>
+                  ) : (
+                    <span className="zoom-readout">{zoom}% zoom</span>
+                  )}
+                </header>
                 <div className="preview-scroll">
                   {pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={zoom} /> : <p>Loading preview...</p>}
                   <section className="page-text" aria-label={`Selectable text from page ${currentPage}`} tabIndex={0}>
@@ -422,16 +606,45 @@ function App() {
               </section>
             </div>
 
-            <footer className="transport" aria-label="Speech playback controls">
-              <div className="transport-buttons">
-                <button aria-label="Stop reading" onClick={stop} disabled={playback.status === 'ready'}><Icon name="stop" /></button>
-                <button className="play-button" aria-label={playback.status === 'playing' ? 'Pause reading' : playback.status === 'paused' ? 'Resume reading' : 'Start reading'} onClick={read} disabled={!documentState.characterCount || documentState.scanned || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
-              </div>
-              <div className="waveform" data-playing={playback.status === 'playing'} aria-hidden="true">{Array.from({ length: 32 }, (_, index) => <i key={index} style={{ height: `${8 + ((index * 17) % 25)}px` }} />)}</div>
-              <div className="playback-readout" aria-live="polite"><strong>{playback.status}</strong><span>{playback.message}</span></div>
-              <label className="dial-control">Speed <output>{speed.toFixed(2)}x</output><input aria-label="Reading speed" type="range" min="0.5" max="2" step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /></label>
-              <label className="dial-control">Zoom <output>{zoom}%</output><input aria-label="Preview zoom" type="range" min="50" max="180" step="10" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label>
-            </footer>
+            {!isMobile && (
+              <footer className="transport" aria-label="Speech playback controls">
+                <div className="transport-buttons">
+                  <button aria-label="Stop reading" onClick={stop} disabled={playback.status === 'ready'}><Icon name="stop" /></button>
+                  <button className="play-button" aria-label={playLabel} onClick={read} disabled={!documentState.characterCount || documentState.scanned || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
+                </div>
+                <div className="waveform" data-playing={playback.status === 'playing'} aria-hidden="true">{Array.from({ length: 32 }, (_, index) => <i key={index} style={{ height: `${8 + ((index * 17) % 25)}px` }} />)}</div>
+                <div className="playback-readout" aria-live="polite"><strong>{playback.status}</strong><span>{playback.message}</span></div>
+                <label className="dial-control">Speed <output>{speed.toFixed(2)}x</output><input aria-label="Reading speed" type="range" min="0.5" max="2" step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /></label>
+                <label className="dial-control">Zoom <output>{zoom}%</output><input aria-label="Preview zoom" type="range" min="50" max="180" step="10" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label>
+              </footer>
+            )}
+
+            {isMobile && (
+              <nav className="mobile-bar" ref={mobileBarRef} aria-label="Reader panels and playback">
+                <div className="mobile-tabs" role="tablist" aria-label="Reader panels">
+                  {MOBILE_PANELS.map((panel) => (
+                    <button
+                      key={panel.id}
+                      type="button"
+                      role="tab"
+                      id={`tab-${panel.id}`}
+                      aria-selected={activePanel === panel.id}
+                      aria-controls={`panel-${panel.id}`}
+                      className={activePanel === panel.id ? 'active' : ''}
+                      onClick={() => setActivePanel(panel.id)}
+                    >
+                      <PanelIcon paths={panel.paths} />
+                      <span>{panel.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="mobile-transport">
+                  <span className="mobile-page" aria-live="polite">Page {currentPage}</span>
+                  <button aria-label="Stop reading" onClick={stop} disabled={playback.status === 'ready'}><Icon name="stop" /></button>
+                  <button className="play-button" aria-label={playLabel} onClick={read} disabled={!documentState.characterCount || documentState.scanned || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
+                </div>
+              </nav>
+            )}
           </>
         )}
         <DiagnosticsStatus />
