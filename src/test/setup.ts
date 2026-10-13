@@ -10,4 +10,6 @@ class MemoryStorage implements Storage {
   setItem(key: string, value: string) { this.data.set(key, String(value)) }
 }
 
-Object.defineProperty(window, 'localStorage', { value: new MemoryStorage(), configurable: true })
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'localStorage', { value: new MemoryStorage(), configurable: true })
+}

@@ -15,7 +15,9 @@ Open the local URL printed by Vite. Use **Open PDF** to select a text-based PDF.
 
 ## Current document storage
 
-LatteReader has no account, backend, sync, or cloud upload.
+LatteReader's static production app has no account, backend, sync, or document upload.
+Optional content-free diagnostics on an explicitly enabled loopback-only private preview
+are described in [testing diagnostics](docs/testing-diagnostics.md); this never uploads PDFs or text.
 
 - PDF parsing, text extraction, analysis, and speech stay in the browser.
 - IndexedDB holds exactly one current-document record containing the PDF bytes, versioned voice plan, reader settings, and current page.

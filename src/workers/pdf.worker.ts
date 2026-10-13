@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+// Upstream legacy build supplies reviewed compatibility in this realm.
+import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import type { TextItem } from 'pdfjs-dist/types/src/display/api'
 
 // PDF.js's automatic worker setup reads window.location, which does not
@@ -49,7 +50,7 @@ self.onmessage = async (event: MessageEvent<Request>) => {
       scanned: sampledPages > 0 && pagesWithText === 0,
     })
     await document.cleanup()
-  } catch (error) {
-    send({ type: 'error', message: error instanceof Error ? error.message : 'Could not read this PDF.' })
+  } catch {
+    send({ type: 'error', message: 'Could not extract text from this PDF. Try opening it again.' })
   }
 }

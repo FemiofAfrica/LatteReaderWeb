@@ -12,6 +12,8 @@ import {
 import { emptyDocumentState, type DocumentState, type ExtractionMessage } from './domain/document'
 import { initialPlaybackState, playbackReducer, type ReadScope } from './domain/playback'
 import { BrowserSpeechEngine } from './speech/SpeechEngine'
+import { recordEvent } from './diagnostics/diagnostics'
+import { DiagnosticsStatus } from './components/DiagnosticsStatus'
 
 const formatNumber = new Intl.NumberFormat()
 const formatBytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -89,51 +91,64 @@ function App() {
     state.extraction = 'extracting'
     setDocumentState(state)
 
-    const workerBytes = record.bytes.slice(0)
-    const worker = new Worker(new URL('./workers/pdf.worker.ts', import.meta.url), { type: 'module' })
-    extractionWorkerRef.current = worker
-    worker.onmessage = (event: MessageEvent<ExtractionMessage>) => {
-      const message = event.data
-      setDocumentState((current) => {
-        if (!current || current.id !== record.id) return current
-        if (message.type === 'metadata') {
-          return { ...current, pageCount: message.pageCount, pages: Array(message.pageCount).fill('') }
-        }
-        if (message.type === 'page') {
-          const pages = [...current.pages]
-          pages[message.pageNumber - 1] = message.text
-          return {
-            ...current,
-            pages,
-            characterCount: message.characterCount,
-            extractedPages: message.pageNumber,
-            extraction: 'extracting',
+    const extractionStart = performance.now()
+    recordEvent('extraction.start', { count: document.numPages })
+    try {
+      const workerBytes = record.bytes.slice(0)
+      const worker = new Worker(new URL('./workers/pdf.worker.ts', import.meta.url), { type: 'module' })
+      extractionWorkerRef.current = worker
+      worker.onmessage = (event: MessageEvent<ExtractionMessage>) => {
+        const message = event.data
+        if (message.type === 'page') recordEvent('extraction.progress', { page: message.pageNumber })
+        if (message.type === 'complete') recordEvent('extraction.complete', { count: document.numPages, durationMs: performance.now() - extractionStart })
+        if (message.type === 'error') recordEvent('extraction.fail', { errorCode: 'worker', durationMs: performance.now() - extractionStart })
+        setDocumentState((current) => {
+          if (!current || current.id !== record.id) return current
+          if (message.type === 'metadata') {
+            return { ...current, pageCount: message.pageCount, pages: Array(message.pageCount).fill('') }
           }
-        }
-        if (message.type === 'complete') {
-          return {
-            ...current,
-            characterCount: message.characterCount,
-            extraction: 'complete',
-            scanned: message.scanned,
+          if (message.type === 'page') {
+            const pages = [...current.pages]
+            pages[message.pageNumber - 1] = message.text
+            return {
+              ...current,
+              pages,
+              characterCount: message.characterCount,
+              extractedPages: message.pageNumber,
+              extraction: 'extracting',
+            }
           }
-        }
-        return { ...current, extraction: 'error', error: message.message }
-      })
-      if (message.type === 'complete' || message.type === 'error') worker.terminate()
+          if (message.type === 'complete') {
+            return {
+              ...current,
+              characterCount: message.characterCount,
+              extraction: 'complete',
+              scanned: message.scanned,
+            }
+          }
+          return { ...current, extraction: 'error', error: message.message }
+        })
+        if (message.type === 'complete' || message.type === 'error') worker.terminate()
+      }
+      worker.onerror = () => {
+        recordEvent('extraction.fail', { errorCode: 'worker', durationMs: performance.now() - extractionStart })
+        setDocumentState((current) => current?.id === record.id ? {
+          ...current,
+          extraction: 'error',
+          error: 'Text extraction stopped unexpectedly. Try opening the PDF again.',
+        } : current)
+        worker.terminate()
+      }
+      worker.postMessage({ type: 'extract', bytes: workerBytes }, [workerBytes])
+    } catch {
+      recordEvent('extraction.fail', { errorCode: 'worker', durationMs: performance.now() - extractionStart })
+      setDocumentState(current => current ? { ...current, extraction: 'error', error: 'Text extraction could not start. Try opening the PDF again.' } : current)
     }
-    worker.onerror = () => {
-      setDocumentState((current) => current?.id === record.id ? {
-        ...current,
-        extraction: 'error',
-        error: 'Text extraction stopped unexpectedly. Try opening the PDF again.',
-      } : current)
-      worker.terminate()
-    }
-    worker.postMessage({ type: 'extract', bytes: workerBytes }, [workerBytes])
   }
 
   const loadPdf = async (file: File) => {
+    const started = performance.now()
+    recordEvent('upload.start')
     setUploadError('')
     try {
       const bytes = await file.arrayBuffer()
@@ -152,8 +167,11 @@ function App() {
         record,
         async (validationBytes) => (await import('./pdf/loadPdf')).loadPdf(validationBytes),
       )
+      recordEvent('upload.validated', { count: document.numPages })
+      recordEvent('upload.replaced', { count: document.numPages, durationMs: performance.now() - started })
       await activateDocument(record, document)
     } catch {
+      recordEvent('upload.fail', { errorCode: 'pdf', durationMs: performance.now() - started })
       setUploadError('That file is not a readable PDF. Your current saved document was not changed.')
     }
   }
@@ -161,12 +179,19 @@ function App() {
   useEffect(() => {
     let cancelled = false
     const restore = async () => {
+      const started = performance.now()
+      recordEvent('restore.start')
       try {
         const record = await loadCurrentDocument()
-        if (!record || cancelled) return
+        if (cancelled) return
+        if (!record) { recordEvent('restore.empty'); return }
         const document = await (await import('./pdf/loadPdf')).loadPdf(record.bytes.slice(0))
-        if (!cancelled) await activateDocument(record, document)
+        if (!cancelled) {
+          await activateDocument(record, document)
+          recordEvent('restore.complete', { count: document.numPages, durationMs: performance.now() - started })
+        }
       } catch {
+        recordEvent('restore.fail', { errorCode: 'storage', durationMs: performance.now() - started })
         if (!cancelled) setUploadError('The saved PDF could not be restored. You can delete it and open another PDF.')
       } finally {
         if (!cancelled) setIsRestoring(false)
@@ -186,11 +211,19 @@ function App() {
 
   const analyze = () => {
     if (!documentState) return
-    const plan = analyzeDocument(documentState.id, documentState.name, documentState.pages)
-    setVoicePlan(plan)
-    void updateCurrentDocument({ voicePlan: plan })
-    const characterCount = Math.max(0, plan.profiles.length - 1)
-    setAnalysisMessage(`Found ${characterCount} character ${characterCount === 1 ? 'speaker' : 'speakers'} plus the narrator.`)
+    const started = performance.now()
+    recordEvent('analysis.start', { count: documentState.pageCount })
+    try {
+      const plan = analyzeDocument(documentState.id, documentState.name, documentState.pages)
+      setVoicePlan(plan)
+      void updateCurrentDocument({ voicePlan: plan })
+      const characterCount = Math.max(0, plan.profiles.length - 1)
+      setAnalysisMessage(`Found ${characterCount} character ${characterCount === 1 ? 'speaker' : 'speakers'} plus the narrator.`)
+      recordEvent('analysis.complete', { count: plan.profiles.length, durationMs: performance.now() - started })
+    } catch {
+      recordEvent('analysis.fail', { durationMs: performance.now() - started })
+      setAnalysisMessage('Character analysis failed. Try again.')
+    }
   }
 
   const currentText = documentState?.pages[currentPage - 1] ?? ''
@@ -231,20 +264,27 @@ function App() {
   }
 
   const deleteLocalData = async () => {
-    speechRef.current.stop()
-    extractionWorkerRef.current?.terminate()
-    if (pdf) await pdf.cleanup()
-    await clearCurrentDocument()
-    setPdf(null)
-    setDocumentState(null)
-    setVoicePlan(null)
-    setCurrentPage(1)
-    setZoom(100)
-    setSpeed(1)
-    setReadScope('page')
-    setAnalysisMessage('Analyze the extracted text to find character labels and dialogue.')
-    setUploadError('Saved PDF, voice plan, settings, and reading position deleted from this browser.')
-    dispatchPlayback({ type: 'STOP' })
+    recordEvent('delete.start')
+    try {
+      speechRef.current.stop()
+      extractionWorkerRef.current?.terminate()
+      if (pdf) await pdf.cleanup()
+      await clearCurrentDocument()
+      setPdf(null)
+      setDocumentState(null)
+      setVoicePlan(null)
+      setCurrentPage(1)
+      setZoom(100)
+      setSpeed(1)
+      setReadScope('page')
+      setAnalysisMessage('Analyze the extracted text to find character labels and dialogue.')
+      setUploadError('Saved PDF, voice plan, settings, and reading position deleted from this browser.')
+      dispatchPlayback({ type: 'STOP' })
+      recordEvent('delete.complete')
+    } catch {
+      recordEvent('delete.fail', { errorCode: 'storage' })
+      setUploadError('Local data could not be deleted. Try again.')
+    }
   }
 
   const extractionLabel = !documentState ? ''
@@ -294,7 +334,7 @@ function App() {
               <p>{isRestoring ? 'Looking for your current PDF in this browser.' : 'Open a text PDF, preview each page, and listen with a voice already available in your browser.'}</p>
             </div>
             <button className="primary-button" onClick={openPicker} disabled={isRestoring}>Open a local PDF</button>
-            <p className="privacy-note">Your current PDF is saved only in this browser and restored after reload. Opening another PDF replaces it. Nothing is uploaded.</p>
+            <p className="privacy-note">Your current PDF is saved only in this browser and restored after reload. Opening another PDF replaces it. PDF content is never uploaded.</p>
             {uploadError.includes('could not be restored') && <button className="delete-button compact-delete" onClick={() => void deleteLocalData()}>Clear saved reader data</button>}
           </section>
         ) : (
@@ -388,6 +428,7 @@ function App() {
             </footer>
           </>
         )}
+        <DiagnosticsStatus />
         <div className="visually-hidden" role="status" aria-live="polite">{documentState ? `${extractionLabel}. ${playback.message}.` : 'No PDF open.'}</div>
       </section>
     </main>

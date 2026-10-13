@@ -178,6 +178,13 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; white-space: nowrap !important; }
 
+.diagnostics-panel { padding: 9px 20px; border-top: 1px solid var(--border); color: var(--muted); font: 11px/1.6 DM Mono, monospace; }
+.diagnostics-panel summary { cursor: pointer; width: fit-content; }
+.diagnostics-panel summary:focus-visible { outline: 3px solid var(--butter); outline-offset: 3px; }
+.diagnostics-controls { max-width: 650px; padding-block: 8px; }
+.diagnostics-controls p { margin: 4px 0 10px; }
+.diagnostics-controls button { width: auto; padding-inline: 12px; margin: 0 12px 6px 0; }
+
 @media (max-width: 1100px) {
   .ambient-shell { padding: 12px; }
   .reader-deck { min-height: calc(100vh - 24px); border-radius: 20px; }

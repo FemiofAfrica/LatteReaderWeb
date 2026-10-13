@@ -7,7 +7,7 @@ import path from 'node:path'
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 // The ?url asset is shipped verbatim. Locate PDFDocument.parse in that exact
 // dependency, then stop the real execution there using Chromium's debugger.
-const source = await readFile(path.join(root, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'), 'utf8')
+const source = await readFile(path.join(root, 'node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs'), 'utf8')
 const token = 'this.xref.parse('
 assert.equal(source.split(token).length, 2, 'Update the parser breakpoint for this PDF.js version')
 const before = source.slice(0, source.indexOf(token))
@@ -17,6 +17,8 @@ const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage()
 const cdp = await page.context().newCDPSession(page)
 const targets = []
+const missingMapRealms = []
+const compatibility = process.env.LATTE_TEST_NO_MAP === '1'
 const parserStops = []
 const errors = []
 const pending = new Set()
@@ -72,6 +74,11 @@ function endpoint(transport, target = null, parent = null) {
     await send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: false })
     if (target?.type === 'worker') {
       targets.push({ targetId: target.targetId, parent, type: target.type, url: target.url })
+      if (compatibility) {
+        const removed = await send('Runtime.evaluate', { expression: 'delete Map.prototype.getOrInsertComputed; delete Map.prototype.getOrInsert; typeof Map.prototype.getOrInsertComputed', returnByValue: true })
+        assert.equal(removed.result.value, 'undefined')
+        missingMapRealms.push(target.targetId)
+      }
       await send('Debugger.enable')
       await send('Debugger.setBreakpointByUrl', { urlRegex: 'pdf\\.worker\\.min[^/]*\\.mjs', lineNumber, columnNumber })
     }
@@ -86,6 +93,7 @@ const rootEndpoint = endpoint(async (payload) => {
 cdp.on('Target.attachedToTarget', (params) => rootEndpoint.receive({ method: 'Target.attachedToTarget', params }))
 cdp.on('Target.receivedMessageFromTarget', (params) => rootEndpoint.receive({ method: 'Target.receivedMessageFromTarget', params }))
 await rootEndpoint.initialize()
+if (compatibility) await page.addInitScript(() => { delete Map.prototype.getOrInsertComputed; delete Map.prototype.getOrInsert })
 const warnings = []
 const requests = []
 page.on('request', (request) => requests.push(request.url()))
@@ -115,6 +123,15 @@ try {
   await page.locator('input[type=file]').setInputFiles(path.join(root, 'tests/fixtures/latte-reader-text-fixture.pdf'))
   await page.getByText('Extraction complete', { exact: true }).waitFor({ timeout: 15000 })
   await page.getByText('LATTEREADER TEST STORY').waitFor()
+  if (compatibility) {
+    await page.waitForFunction(() => document.querySelector('canvas')?.width > 0)
+    await page.getByRole('button', { name: 'Next page' }).click()
+    await page.getByText('SECOND PAGE').waitFor()
+    await page.getByLabel('Preview zoom').fill('120')
+    await page.waitForTimeout(500)
+    assert.equal(await page.locator('.page-stage .error-copy').count(), 0)
+    assert.equal(missingMapRealms.length, 3)
+  }
   await Promise.all([...pending])
   const extractionMessages = await page.evaluate(() => window.__pdfAuditMessages)
   assert.deepEqual(errors, [], 'CDP instrumentation failed')
@@ -127,7 +144,7 @@ try {
   assert.ok(parserStops.some((stop) => stop.parent !== extractionTarget.targetId), 'Preview parser worker was not observed')
   assert.deepEqual(extractionMessages.filter((event) => event.type === 'page').map((event) => event.pageNumber), [1, 2])
   assert.equal(extractionMessages.find((event) => event.type === 'complete')?.characterCount, 365)
-  console.log(JSON.stringify({ status: 'passed', initialPdfRequests, targets, parserStops, extractionMessages, fakeWorkerWarnings: warnings }, null, 2))
+  console.log(JSON.stringify({ status: 'passed', compatibility, missingMapRealms, canvas: await page.locator('canvas').evaluate(c => ({ width: c.width, height: c.height })), initialPdfRequests, targets, parserStops, extractionMessages, fakeWorkerWarnings: warnings }, null, 2))
 } catch (error) {
   console.error(JSON.stringify({ status: 'failed', error: error.message, targets, parserStops, fakeWorkerWarnings: warnings }, null, 2))
   throw error

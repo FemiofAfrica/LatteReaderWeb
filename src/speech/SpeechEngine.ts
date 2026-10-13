@@ -1,4 +1,5 @@
 import type { DocumentVoicePlan } from '../domain/analysis'
+import { recordEvent } from '../diagnostics/diagnostics'
 
 export interface SpeechRequest {
   text: string
@@ -33,6 +34,8 @@ export class BrowserSpeechEngine implements SpeechEngine {
 
   speak({ text, rate, plan }: SpeechRequest): void {
     this.stop()
+    const started = performance.now()
+    recordEvent('speech.start')
     const generation = this.generation
     const segments = plan?.segments.length
       ? plan.segments.map((segment) => ({
@@ -44,7 +47,7 @@ export class BrowserSpeechEngine implements SpeechEngine {
     let index = 0
     const next = () => {
       if (generation !== this.generation || index >= segments.length) {
-        if (generation === this.generation) this.ended()
+        if (generation === this.generation) { recordEvent('speech.end', { durationMs: performance.now() - started }); this.ended() }
         return
       }
       const segment = segments[index++]
@@ -52,15 +55,20 @@ export class BrowserSpeechEngine implements SpeechEngine {
       utterance.rate = rate
       utterance.voice = voices[segment.voiceIndex % Math.max(voices.length, 1)] ?? null
       utterance.onend = next
-      utterance.onerror = next
-      window.speechSynthesis.speak(utterance)
+      utterance.onerror = () => {
+        if (generation !== this.generation) return
+        recordEvent('speech.error', { errorCode: 'speech' }); next()
+      }
+      try { window.speechSynthesis.speak(utterance) }
+      catch { recordEvent('speech.error', { errorCode: 'speech' }); this.ended() }
     }
     next()
   }
 
-  pause(): void { window.speechSynthesis.pause() }
-  resume(): void { window.speechSynthesis.resume() }
+  pause(): void { recordEvent('speech.pause'); window.speechSynthesis.pause() }
+  resume(): void { recordEvent('speech.resume'); window.speechSynthesis.resume() }
   stop(): void {
+    recordEvent('speech.stop')
     this.generation += 1
     if (this.available) window.speechSynthesis.cancel()
   }

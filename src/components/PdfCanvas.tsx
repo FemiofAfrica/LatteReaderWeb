@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
+import { recordEvent } from '../diagnostics/diagnostics'
 
 interface PdfCanvasProps {
   document: PDFDocumentProxy
@@ -18,6 +19,8 @@ export function PdfCanvas({ document, pageNumber, zoom, onRendered }: PdfCanvasP
     let renderTask: ReturnType<PDFPageProxy['render']> | undefined
 
     const render = async () => {
+      const started = performance.now()
+      recordEvent('renderer.start', { page: pageNumber, zoom })
       try {
         page = await document.getPage(pageNumber)
         if (cancelled || !canvasRef.current) return
@@ -38,12 +41,14 @@ export function PdfCanvas({ document, pageNumber, zoom, onRendered }: PdfCanvasP
         })
         await renderTask.promise
         if (!cancelled) {
+          recordEvent('renderer.complete', { page: pageNumber, zoom, durationMs: performance.now() - started })
           setError('')
           onRendered?.()
         }
       } catch (reason) {
-        if (!cancelled && (reason as { name?: string }).name !== 'RenderingCancelledException') {
-          setError(reason instanceof Error ? reason.message : 'Page rendering failed.')
+        if (!cancelled && (reason as { name?: string } | null)?.name !== 'RenderingCancelledException') {
+          recordEvent('renderer.fail', { page: pageNumber, zoom, errorCode: 'render', durationMs: performance.now() - started })
+          setError('Page rendering failed. Try another page or zoom level.')
         }
       }
     }
@@ -58,7 +63,8 @@ export function PdfCanvas({ document, pageNumber, zoom, onRendered }: PdfCanvasP
 
   return (
     <div className="page-stage" aria-label={`Rendered PDF page ${pageNumber}`}>
-      {error ? <p className="error-copy">{error}</p> : <canvas ref={canvasRef} />}
+      {error && <p className="error-copy">{error}</p>}
+      <canvas ref={canvasRef} hidden={Boolean(error)} />
     </div>
   )
 }
