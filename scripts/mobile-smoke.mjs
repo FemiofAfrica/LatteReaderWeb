@@ -102,6 +102,30 @@ check(readTexts.includes('SECOND PAGE'), 'Reading did not continue onto the seco
 check((await statusText()).includes('Finished the document'), 'Playback did not report the end of the document')
 check(await page.locator('.preview-header').innerText().then(text => text.includes('Page 2')), 'The preview did not follow playback to the last page')
 
+// The stored reading position must follow playback, not just the on-screen preview.
+// The position is written on a short debounce, so poll briefly for it to land.
+const readStoredPage = () => page.evaluate(async () => {
+  const database = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('latte-reader-local', 1)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  const transaction = database.transaction('current-document', 'readonly')
+  const request = transaction.objectStore('current-document').get('current')
+  const record = await new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  database.close()
+  return record?.reader?.currentPage
+})
+let storedPage = await readStoredPage()
+for (let attempt = 0; attempt < 20 && storedPage !== 2; attempt += 1) {
+  await page.waitForTimeout(200)
+  storedPage = await readStoredPage()
+}
+check(storedPage === 2, `Stored reading position did not follow playback (saw page ${storedPage})`)
+
 // 5. Stop cancels immediately: no utterance starts after stop.
 await page.getByRole('tab', { name: 'Document' }).click()
 await page.getByLabel('Go to page').fill('1')
@@ -114,6 +138,26 @@ const spokenAtStop = await page.evaluate(() => window.__spoken)
 await page.waitForTimeout(600)
 check(await page.evaluate(() => window.__spoken) === spokenAtStop, 'An utterance started after Stop was pressed')
 check(await playButton().getAttribute('aria-label') === 'Start reading', 'Stop did not return playback to the ready state')
+
+// 5b. Selection reading still reads only the selection.
+await page.getByRole('tab', { name: 'Preview' }).click()
+await page.waitForFunction(() => document.querySelector('.preview-header')?.textContent?.includes('Page 1'))
+await page.evaluate(() => {
+  const paragraph = document.querySelector('.page-text p')
+  const range = document.createRange()
+  range.setStart(paragraph.firstChild, 0)
+  range.setEnd(paragraph.firstChild, 12)
+  const selection = window.getSelection()
+  selection.removeAllRanges()
+  selection.addRange(range)
+})
+const spokenBeforeSelection = await page.evaluate(() => window.__spoken)
+await playButton().click()
+await page.waitForFunction((before) => (window.__spoken ?? 0) > before, spokenBeforeSelection, { timeout: 10000 })
+const selectionRead = await page.evaluate(() => window.__utterances.at(-1))
+check(selectionRead.length < 40 && !selectionRead.includes('ALICE'), `Selection reading read more than the selection: "${selectionRead}"`)
+await stopButton().click()
+await page.evaluate(() => window.getSelection().removeAllRanges())
 
 // 6. No horizontal overflow at the phone width.
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
@@ -142,7 +186,9 @@ console.log(JSON.stringify({
     'all four panels switchable',
     'one play press reads continuously to the end of the document',
     'preview follows the page being read',
+    'the stored reading position follows playback',
     'stop cancels with no further utterances',
+    'selection reading still reads only the selection',
     'no horizontal overflow at 390x844',
     'desktop keeps the console with no bottom bar',
   ],
