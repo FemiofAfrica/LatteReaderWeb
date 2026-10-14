@@ -43,7 +43,15 @@ async function start() {
   self.Module = {
     locateFile: name => new URL(name, BASE_URL).href,
     getPreloadedPackage: () => loaded.data,
-    wasmBinary: new Uint8Array(loaded.wasm),
+    // This pinned glue does not read Module.wasmBinary. Its supported
+    // instantiateWasm hook bypasses the default streaming URL fetch, ensuring
+    // the module executes exactly the WASM bytes already length/hash verified.
+    instantiateWasm: (imports, receiveInstance) => {
+      WebAssembly.instantiate(loaded.wasm, imports)
+        .then(({ instance }) => receiveInstance(instance))
+        .catch(error => postMessage({ espeakError: `WASM_INSTANTIATION_FAILED:${String(error?.message ?? error)}` }))
+      return {}
+    },
     setStatus: () => {},
   }
   // The bytes that are executed are the bytes that were hashed: the verified

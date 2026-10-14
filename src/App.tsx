@@ -28,7 +28,7 @@ import { ReadingProgress } from './components/ReadingProgress'
 import { BrowserSpeechEngine, type SpeechEngine } from './speech/SpeechEngine'
 import { LocalNarratorEngine, type LocalStatus } from './speech/LocalNarratorEngine'
 import { LocalNarratorNotices } from './components/LocalNarratorNotices'
-import { NARRATOR_TRANSFER_BYTES } from './speech/local/narratorAssets'
+import { NARRATOR_COMPONENT_BYTES } from './speech/local/narratorAssets'
 import './speech/local-narrator.css'
 import { watchBrowserVoices, type VoiceListState } from './speech/browserVoices'
 import { VoiceChooser } from './components/VoiceChooser'
@@ -790,7 +790,7 @@ function App() {
                     {engine === 'local' && <>
                       <p className="panel-copy">{privateNarrator
                         ? 'Private Kitten Micro trial, Jasper, English. Enable loads about 53 MB from this private preview. PDF text and audio stay on this device. No saved audio or voice cache. English phonemes come from our own pinned eSpeak-NG build; its licence, notices and source are linked below. Public release and device support are not approved yet.'
-                        : `One fixed English voice, Jasper, running on this device. Enable downloads about ${formatBytes(NARRATOR_TRANSFER_BYTES)} of voice files from this site, once: the speech model in two parts, the voice, the speech runtime and the English phonemizer. Nothing is requested before you press Enable, and nothing comes from anywhere else. Your PDF, its text, your selection and the audio stay on this device. Browser speech stays the default and goes on working.`}</p>
+                        : `One fixed English voice, Jasper, running on this device. Enable loads about ${formatBytes(NARRATOR_COMPONENT_BYTES)} of voice files plus a small app worker from this site: the speech model in two parts, the voice, the speech runtime and the English phonemizer. Nothing is requested before you press Enable, and nothing comes from anywhere else. There is no saved voice cache in the app; later enables may fetch the files again. Actual network transfer depends on your browser cache and compression. Your PDF, its text, your selection and the audio stay on this device. Browser speech stays the default and goes on working.`}</p>
                       <LocalNarratorNotices />
                       <p className="panel-copy">Browser voice choices below are preserved but do not apply to Jasper.</p>
                       <p className="panel-copy">Follows the playing chunk, not individual words. Cross-page follow moves at chunk completion. Foreground only.</p>

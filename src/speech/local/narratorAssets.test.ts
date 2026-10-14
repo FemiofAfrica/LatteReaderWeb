@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { NARRATOR_LARGEST_FILE, NARRATOR_PINS, NARRATOR_TRANSFER_BYTES, NARRATOR_BASE_PATH, narratorPath } from './narratorAssets'
+import { NARRATOR_LARGEST_FILE, NARRATOR_PINS, NARRATOR_COMPONENT_BYTES, NARRATOR_BASE_PATH, narratorPath } from './narratorAssets'
 import pinsJson from './narratorPins.json'
 
 // Vitest's jsdom environment resolves import.meta.url to an http URL, so the
@@ -84,7 +84,7 @@ describe('local narrator assets we ship', () => {
     expect(sha256(bytes)).toBe(NARRATOR_PINS.symbols.sha256)
   })
 
-  it('advertises a real first-download total and keeps every file under the host limit', () => {
+  it('records the uncompressed component payload and keeps every file under the host limit', () => {
     const limit = NARRATOR_PINS.perFileLimit.bytes
     expect(limit).toBe(26214400)
     let total = 0
@@ -97,8 +97,9 @@ describe('local narrator assets we ship', () => {
       total += entry.bytes
     }
     expect(total).toBe(NARRATOR_PINS.transfer.bytes)
-    expect(total).toBe(NARRATOR_TRANSFER_BYTES)
-    // The advertised total must be the whole opt-in, not just the graph.
+    expect(total).toBe(NARRATOR_COMPONENT_BYTES)
+    expect(NARRATOR_PINS.transfer.basis).toMatch(/excludes built app worker/)
+    // Component payload includes more than the graph, but is not network traffic.
     expect(total).toBeGreaterThan(NARRATOR_PINS.graph.bytes)
     expect(NARRATOR_LARGEST_FILE).toBe(20692485)
     expect(NARRATOR_PINS.graph.bytes).toBeGreaterThan(limit)

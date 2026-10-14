@@ -119,7 +119,8 @@ const phonemizer = {
   files: espeak.objectCode.map(({role, file, bytes, sha256: hash}) => ({role, path: `../espeak/${file}`, bytes, sha256: hash})),
 }
 
-// 5. The real first-download total: everything the worker fetches after Enable.
+// 5. Uncompressed component payload. Excludes the built app worker and HTTP
+// overhead; actual network transfer depends on cache/compression and retries.
 const transfer = [
   ...parts.map(part => ({path: part.path, bytes: part.bytes, why: 'part of the pinned model graph, reassembled and re-hashed in the worker'})),
   {path: voice.path, bytes: voice.bytes, why: 'the pinned Jasper voice tensor'},
@@ -152,7 +153,7 @@ const manifest = {
   phonemizer,
   symbols: {path: 'src/speech/local/kittenSymbols.json', bytes: symbols.length, sha256: sha256(symbols)},
   perFileLimit: {host: 'Cloudflare Pages', bytes: PAGES_FILE_LIMIT},
-  transfer: {bytes: transfer.reduce((total, entry) => total + entry.bytes, 0), entries: transfer},
+  transfer: {basis: "Uncompressed component file sizes, one copy per entry; excludes built app worker and HTTP overhead. Actual transfer depends on cache, compression and retries.", bytes: transfer.reduce((total, entry) => total + entry.bytes, 0), entries: transfer},
 }
 if (parts.some(part => part.bytes > PAGES_FILE_LIMIT)) throw Error('PART_OVER_LIMIT')
 

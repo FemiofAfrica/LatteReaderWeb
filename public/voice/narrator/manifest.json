@@ -89,7 +89,7 @@
     },
     "loader": {
       "path": "../espeak/espeakng.bootstrap.js",
-      "bytes": 2730
+      "bytes": 3220
     },
     "files": [
       {
@@ -122,7 +122,8 @@
     "bytes": 26214400
   },
   "transfer": {
-    "bytes": 55642054,
+    "basis": "Uncompressed component file sizes, one copy per entry; excludes built app worker and HTTP overhead. Actual transfer depends on cache, compression and retries.",
+    "bytes": 55642544,
     "entries": [
       {
         "path": "chunks/model.onnx.part1",
@@ -161,7 +162,7 @@
       },
       {
         "path": "../espeak/espeakng.bootstrap.js",
-        "bytes": 2730,
+        "bytes": 3220,
         "why": "the eSpeak-NG loader that verifies its own three files"
       },
       {

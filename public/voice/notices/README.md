@@ -45,16 +45,20 @@ scope its README does not document; we reproduce it verbatim as
 `LICENSE-Apache-2.0.txt` and do **not** claim it grants anything to the data or
 to `ucd-tools`.
 
-## 2. Components staged for the private local narrator trial only
+## 2. Components bundled in this candidate build
 
-These are **not** redistributed by this repository. They live outside it and are
-not served by a public deployment. Their notices are shipped here anyway so that
-the position is recorded before anything is published.
+The candidate build now bundles ONNX Runtime Web, the Kitten model graph (in
+two parts), and the derived Jasper voice tensor under `/voice/narrator/`.
+They are included in this repository and its local build, but this candidate
+has **not been publicly deployed**. Inclusion is not legal clearance to publish.
+The publisher's model licence declaration and the voice provenance have not
+been independently confirmed. The GPL combined-work scope described in §5
+also remains unresolved.
 
 | Component | Licence | Notice text | Notes |
 |---|---|---|---|
 | onnxruntime-web 1.24.3 (WASM + JS) | MIT | `LICENSE-MIT-onnxruntime-web.txt` | **The npm package ships no licence file.** This text is the upstream MIT licence, supplied by us, with the Microsoft copyright line. Redistribution is permitted with this notice. |
-| Kitten Micro 0.8 TTS model (`model.onnx`) and the voice tensor (`jasper.f32`, derived from `voices.npz`) | Apache-2.0, as declared by the publisher | `LICENSE-Apache-2.0.txt` | The Hugging Face repo `KittenML/kitten-tts-micro-0.8` at revision `1ccf72b2c2048fd17efac7de2fab32d10e225084` declares `license: apache-2.0` in its metadata and contains **no `LICENSE` file**; the declaration is the grant. The model card's only acknowledgement is "StyleTTS 2 architecture". The provenance of `voices.npz` is not documented by the publisher and is **unverified**; we treat the declared Apache-2.0 as the term and are seeking written confirmation. |
+| Kitten Micro 0.8 TTS model (`model.onnx`) and the voice tensor (`jasper.f32`, derived from `voices.npz`) | Apache-2.0, as declared by the publisher | `LICENSE-Apache-2.0.txt` | The Hugging Face repo `KittenML/kitten-tts-micro-0.8` at revision `1ccf72b2c2048fd17efac7de2fab32d10e225084` declares `license: apache-2.0` in its metadata and contains **no `LICENSE` file**; we record that declaration, not an independently confirmed grant. The model card's only acknowledgement is "StyleTTS 2 architecture". The provenance of `voices.npz` is not documented by the publisher and is **unverified**; written confirmation of the licence and voice provenance remains required before public release. |
 
 ## 3. Modification record for the eSpeak-NG build (GPLv3 §5(a), §5(b))
 

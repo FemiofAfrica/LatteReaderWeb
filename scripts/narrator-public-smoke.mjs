@@ -44,10 +44,17 @@ const expected = new Map([
   [`/voice/${pins.phonemizer.loader.path.replace('../', '')}`, { bytes: pins.phonemizer.loader.bytes, sha256: null }],
 ])
 
+// Include the manifest's size in byte accounting, without weakening binary pins.
+for (const entry of pins.transfer.entries) {
+  const path = new URL(entry.path, `${origin}/voice/narrator/`).pathname
+  if (!expected.has(path)) expected.set(path, { bytes: entry.bytes, sha256: null })
+}
+
 const instrument = async page => {
   const requests = []
   const responses = []
   const errors = []
+  const transferReads = []
   page.on('request', request => requests.push({
     url: request.url(), method: request.method(), hasBody: !!request.postData(),
     external: request.url().startsWith('data:') ? false : new URL(request.url()).origin !== origin,
@@ -56,6 +63,11 @@ const instrument = async page => {
   page.on('response', response => {
     const url = new URL(response.url())
     if (url.origin !== origin || !response.ok()) return
+    if (url.pathname.startsWith('/voice/')) transferReads.push((async () => {
+      await response.finished()
+      try { return { path: url.pathname, status: response.status(), sizes: await response.request().sizes() } }
+      catch { return { path: url.pathname, status: response.status(), unavailable: true } }
+    })())
     // Lengths come from the response headers rather than the body: the two
     // graph parts are fetched by the worker and must not be buffered twice.
     responses.push({ path: url.pathname, status: response.status(), bytes: Number(response.headers()['content-length'] ?? 0) })
@@ -108,7 +120,7 @@ const instrument = async page => {
     }
   })
   return {
-    requests, responses, errors,
+    requests, responses, errors, transferReads,
     snapshot: () => page.evaluate(() => JSON.parse(JSON.stringify(window.__local))),
   }
 }
@@ -162,6 +174,13 @@ cdp.on('Network.responseReceived', ({ response }) => network.push({ path: new UR
 // bytes the browser actually got can be hashed, not merely their declared
 // length: the parts are also reassembled and checked here.
 const routed = []
+const extraWorkerBodies = []
+await context.route('**/assets/narrator.worker*.js', async route => {
+  const response = await route.fetch()
+  const body = Buffer.from(await response.body())
+  extraWorkerBodies.push({ path: new URL(route.request().url()).pathname, status: response.status(), bytes: body.length })
+  await route.fulfill({ response, body })
+})
 await context.route('**/voice/**', async route => {
   const response = await route.fetch()
   const body = Buffer.from(await response.body())
@@ -182,7 +201,9 @@ await page.waitForTimeout(500)
 assert.equal(voicePaths(capture).length, 0, `choosing the local engine must request nothing: ${JSON.stringify(voicePaths(capture))}`)
 await page.locator('[data-local-notices=ready]').waitFor()
 const consent = (await page.locator('.local-narrator-controls').innerText()).replace(/\s+/g, ' ')
-assert.match(consent, /about 53\.\d MB of voice files/, `the consent copy must show the real total: ${consent}`)
+assert.match(consent, /about 53\.\d MB of voice files plus a small app worker/, `consent must distinguish component payload from app code: ${consent}`)
+assert.match(consent, /later enables may fetch the files again/)
+assert.match(consent, /network transfer depends on your browser cache and compression/)
 assert.match(consent, /stay on this device/)
 const beforeEnable = await capture.snapshot()
 assert.equal(beforeEnable.ready.length + beforeEnable.failed.length + beforeEnable.metrics.length + beforeEnable.audio.length, 0, 'nothing may start before Enable')
@@ -203,8 +224,12 @@ assert.equal(init.voiceSha256, pins.voice.sha256)
 const optedIn = routed.slice(routeMark)
 // What the browser actually received during this opt-in. Every narrator asset
 // is fetched; the ones the route can see are checked byte for byte, the two
-// graph parts are reassembled, and the rest (loaded by a nested worker, which
-// routing does not reach) are accounted for at their pinned sizes.
+// graph parts are reassembled. A nested bootstrap outside route visibility
+// is reported separately as a pinned estimate, never as measured bytes.
+// Count every response, including repeated URLs. A Map alone hid a second WASM fetch.
+const counts = Object.fromEntries([...new Set(optedIn.map(entry => entry.path))].map(path => [path, optedIn.filter(entry => entry.path === path).length]))
+for (const [path, count] of Object.entries(counts)) assert.equal(count, 1, `${path} must be fetched exactly once, saw ${count}`)
+assert.equal(counts['/voice/espeak/espeakng.worker.wasm'], 1, 'verified eSpeak WASM must not be fetched again by the glue')
 const observed = new Map(optedIn.map(entry => [entry.path, entry]))
 // Request events do not report the script URL of a worker created inside
 // another worker, so /voice/espeak/espeakng.bootstrap.js is not visible here.
@@ -228,10 +253,13 @@ const graph = Buffer.concat(partsObserved.map(asset => asset.body))
 assert.equal(graph.length, pins.graph.bytes)
 assert.equal(sha256(graph), pins.graph.sha256, 'the bytes the browser received must reassemble to the pinned graph')
 const unobserved = [...expected.keys()].filter(path => !observed.has(path))
-const receivedBytes = sum([...observed.values()])
-const countedBytes = receivedBytes + unobserved.reduce((total, path) => total + expected.get(path).bytes, 0)
+assert.deepEqual(unobserved, [...UNOBSERVABLE], 'only the known nested bootstrap may be estimated')
+assert.equal(extraWorkerBodies.length, 1, 'one additional app worker body must be observed during cold opt-in')
+const receivedBytes = sum(optedIn)
+const unobservedPinnedEstimateBytes = unobserved.reduce((total, path) => total + expected.get(path).bytes, 0)
+const accountedComponentBytes = receivedBytes + unobservedPinnedEstimateBytes
 const otherFetches = responses.slice(responseMark).filter(entry => !entry.path.startsWith('/voice/')).map(entry => entry.path)
-assert.equal(countedBytes, pins.transfer.bytes, `the opt-in must total the advertised payload: ${countedBytes} vs ${pins.transfer.bytes}`)
+assert.equal(accountedComponentBytes, pins.transfer.bytes, `observed response bodies plus explicitly unobserved file-size estimates must match component payload: ${accountedComponentBytes} vs ${pins.transfer.bytes}`)
 
 await narrate(page)
 await waitForState(page, capture, 'playing', 'playback start', 240000)
@@ -260,11 +288,16 @@ evidence.phases.coldOptIn = {
   narratorAssets: voicePaths(capture),
   assetCount: voicePaths(capture).length + otherFetches.length,
   otherFetches,
-  receivedPayloadBytes: countedBytes,
+  extraAppWorkerBodies: extraWorkerBodies.slice(),
+  extraAppWorkerBodyBytes: sum(extraWorkerBodies),
+  accountedComponentBytes,
+  unobservedPinnedEstimateBytes,
   observedThroughRoute: receivedBytes,
   observedPaths: [...observed.keys()],
+  responseCounts: counts,
+  measurementBasis: 'routed response body bytes, counted per request; not encoded network bytes. Nested bootstrap is an unobserved pinned estimate, reported separately. Extra app worker excluded from component total. Routing disables HTTP cache.',
   unobservedPathsCountedAtPinnedSize: unobserved,
-  advertisedBytes: pins.transfer.bytes,
+  componentPayloadBytes: pins.transfer.bytes,
   received: optedIn.map(({ path, status, bytes, sha256: hash }) => ({ path, status, bytes, sha256: hash })),
   reassembledGraph: { bytes: graph.length, sha256: sha256(graph) },
   workerInit: init,
@@ -304,11 +337,11 @@ evidence.phases.reload = {
   receivedAfterReload: reloaded.map(({ path, status, bytes }) => ({ path, status, bytes })),
   bytesReceivedAfterReload: sum(reloaded),
   partStatusAfterReload: partTransfer.map(({ path, status, bytes }) => ({ path, status, bytes })),
-  pageLevelBytesAfterReload: sum(responses.slice(reloadResponses)),
+  pageLevelDeclaredContentLengthAfterReload: sum(responses.slice(reloadResponses)),
   fromDiskCache: cacheAfterReload.filter(entry => entry.fromDiskCache).map(entry => entry.path),
-  revalidated: cacheAfterReload.length > 0,
+  pageNetworkResponsesObserved: cacheAfterReload.length,
   reusedFromHttpCache: servedFromCache,
-  policy: 'this app keeps no persistent voice cache of its own, so only the browser HTTP cache can avoid a second transfer; the preview sends Cache-Control: no-cache, so a reload revalidates',
+  policy: 'routed decoded response bodies only; routing disables HTTP cache, so this phase does not measure real cache behaviour. The app keeps no persistent voice cache of its own.',
 }
 
 // ------------------------------------------- reload without interception
@@ -324,6 +357,8 @@ await openFixture(page3)
 await chooseLocal(page3)
 await page3.getByRole('button', { name: 'Enable local narrator', exact: true }).click()
 await waitForState(page3, plainCapture, 'ready', 'unintercepted cold opt-in', 300000)
+const plainColdRequestSizes = await Promise.all(plainCapture.transferReads)
+const plainTransferMark = plainCapture.transferReads.length
 const plainVoiceMark = voicePaths(plainCapture).length
 const plainResponseMark = plainCapture.responses.length
 await page3.reload()
@@ -336,12 +371,15 @@ const plainReloadRequests = voicePaths(plainCapture).slice(plainVoiceMark)
 const plainReloadResponses = plainCapture.responses.slice(plainResponseMark).filter(entry => entry.path.startsWith('/voice/'))
 const notModified = plainReloadResponses.filter(entry => entry.status === 304)
 evidence.phases.reloadWithoutInterception = {
+  coldRequestSizes: plainColdRequestSizes,
+  reloadRequestSizes: await Promise.all(plainCapture.transferReads.slice(plainTransferMark)),
+  sizesBasis: 'Playwright request.sizes: reported encoded body/header sizes per request, counted multiplicatively. The nested worker bootstrap can report zero even cold; that is not proof of zero transfer/cache reuse. Unavailable values are explicit, never filled with pins. Not a complete wire-byte total.',
   assetsRequested: plainReloadRequests,
   responseStatuses: plainReloadResponses.map(entry => ({ path: entry.path, status: entry.status, contentLength: entry.bytes })),
   notModified: notModified.map(entry => entry.path),
   reusedAfterRevalidation: notModified.length > 0,
-  bytesInBodies: sum(plainReloadResponses),
-  note: 'with no interception the browser answers from this origin under the Cache-Control: no-cache the preview sends, so what arrives here is what a plain reload really transfers',
+  declaredContentLengthSum: sum(plainReloadResponses),
+  note: 'Content-Length is a declared body size, not measured transfer. Response events do not prove total worker cache use. A 304 reports revalidation with no response body; totals must not be inferred from URL deduplication or pinned sizes.',
 }
 await plain.close()
 
@@ -414,8 +452,9 @@ console.log(JSON.stringify({
   enableMs,
   audioContextState: evidence.phases.coldOptIn.audioContextState,
   narratorAssetRequests: voicePaths(capture).length,
-  receivedPayloadBytes: countedBytes,
-  advertisedBytes: pins.transfer.bytes,
+  accountedComponentBytes,
+  unobservedPinnedEstimateBytes,
+  componentPayloadBytes: pins.transfer.bytes,
   graphVerifiedByWorker: init.graphSha256,
   graphReassembledFromServedParts: sha256(graph),
   chunksPlayed: starts.length,

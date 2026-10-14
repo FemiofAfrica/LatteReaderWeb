@@ -7,7 +7,7 @@
  * `narratorAssets.test.ts` re-hashes every shipped file against these pins, so a
  * swapped or truncated asset fails the suite instead of shipping quietly.
  *
- * The consent copy reads the real first-download total from here rather than
+ * The consent copy reads the uncompressed component payload total rather than
  * advertising only the graph size, and it does so without fetching anything:
  * before the user's Enable gesture the app makes no request of its own.
  */
@@ -43,7 +43,7 @@ export interface NarratorPins {
   }
   symbols: { path: string; bytes: number; sha256: string }
   perFileLimit: { host: string; bytes: number }
-  transfer: { bytes: number; entries: { path: string; bytes: number; why: string }[] }
+  transfer: { basis: string; bytes: number; entries: { path: string; bytes: number; why: string }[] }
 }
 
 export const NARRATOR_PINS: NarratorPins = pins as NarratorPins
@@ -56,8 +56,10 @@ export function narratorPath(path: string, origin: string): string {
   return new URL(path, new URL(NARRATOR_BASE_PATH, origin)).href
 }
 
-/** The real first-download size for one opt-in, not just the graph. */
-export const NARRATOR_TRANSFER_BYTES: number = NARRATOR_PINS.transfer.bytes
+/** Uncompressed voice component bytes, excluding the built app worker and HTTP overhead.
+ * This is a file-size total, not measured network traffic or a once-only download.
+ */
+export const NARRATOR_COMPONENT_BYTES: number = NARRATOR_PINS.transfer.bytes
 
 /** The largest single served file, for a per-file-limit claim. */
 export const NARRATOR_LARGEST_FILE: number = Math.max(...NARRATOR_PINS.transfer.entries.map(entry => entry.bytes))
