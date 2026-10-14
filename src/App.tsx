@@ -25,6 +25,8 @@ import { recordEvent } from './diagnostics/diagnostics'
 import { shouldRecordProgress } from './diagnostics/progress'
 import type { UploadFailure } from './pdf/uploadFailure'
 import { DiagnosticsStatus } from './components/DiagnosticsStatus'
+import { PageTurnViewer } from './components/PageTurnViewer'
+import { RotaryControl } from './components/RotaryControl'
 
 const formatNumber = new Intl.NumberFormat()
 const formatBytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -101,6 +103,9 @@ function App() {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
   const [documentState, setDocumentState] = useState<DocumentState | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
+  const [spokenPage, setSpokenPage] = useState(0)
+  const [following, setFollowing] = useState(true)
+  const followingRef = useRef(true)
   // `zoom` is the reader's stored zoom setting. On mobile the preview opens at a fit-to-width
   // value held separately in `fitZoom`, so the fit is a view value that never overwrites the
   // saved setting. `manualZoom` marks a zoom the reader set by hand, which is never re-fitted.
@@ -238,6 +243,9 @@ function App() {
     setUploadError('')
     setUploadFailure(null)
     setCurrentPage(Math.min(Math.max(record.reader.currentPage, 1), document.numPages))
+    setSpokenPage(Math.min(document.numPages, Math.max(1, record.reader.readingPage ?? record.reader.currentPage)))
+    followingRef.current = true
+    setFollowing(true)
     setZoom(record.reader.zoom)
     // A newly opened document starts from the stored setting again, so the mobile fit applies.
     setFitZoom(null)
@@ -385,10 +393,20 @@ function App() {
   useEffect(() => {
     if (!documentState) return
     const timeout = window.setTimeout(() => {
-      void updateCurrentDocument({ reader: { currentPage, zoom, speed, readScope } })
+      void updateCurrentDocument({ reader: { currentPage, readingPage: spokenPage, zoom, speed, readScope } }, documentState.id)
     }, 150)
     return () => window.clearTimeout(timeout)
-  }, [currentPage, zoom, speed, readScope, documentState?.id])
+  }, [currentPage, spokenPage, zoom, speed, readScope, documentState?.id])
+
+  useEffect(() => {
+    if (!documentState) return
+    const save = () => { void updateCurrentDocument({ reader: { currentPage: currentPageRef.current, readingPage: readingPageRef.current || spokenPage, zoom, speed, readScope } }, documentState.id) }
+    // Saving on hide does not pause or cancel the browser voice. No automatic restart.
+    const hide = () => { if (document.visibilityState === 'hidden') save() }
+    document.addEventListener('visibilitychange', hide)
+    window.addEventListener('pagehide', save)
+    return () => { document.removeEventListener('visibilitychange', hide); window.removeEventListener('pagehide', save) }
+  }, [documentState?.id, spokenPage, zoom, speed, readScope])
 
   const analyze = () => {
     if (!documentState || documentState.extraction !== 'complete') return
@@ -413,15 +431,19 @@ function App() {
     : 0
   // What is actually rendered: the mobile fit while it is active, otherwise the stored setting.
   const renderZoom = (isMobile || fitRequested) && !manualZoom && fitZoom !== null ? fitZoom : zoom
+  const rotaryControls = <div className="rotary-rack" role="group" aria-label="Reading adjustments">
+    <RotaryControl label="Speed" name="Reading speed" value={speed} min={0.5} max={2} step={0.05} format={value => `${value.toFixed(2)}x`} onChange={setSpeed} />
+    <RotaryControl label="Zoom" name="Preview zoom" className="preview-zoom" value={renderZoom} min={MIN_PREVIEW_ZOOM} max={MAX_PREVIEW_ZOOM} step={1} format={value => `${value}%`} onChange={value => { setManualZoom(true); setZoom(value) }} />
+  </div>
 
-  const read = () => {
+  const read = (fromVisiblePage = false) => {
     if (!documentState || documentState.scanned || !speechRef.current.available) return
-    if (playback.status === 'paused') {
+    if (!fromVisiblePage && playback.status === 'paused') {
       speechRef.current.resume()
       dispatchPlayback({ type: 'RESUME' })
       return
     }
-    if (playback.status === 'playing') {
+    if (!fromVisiblePage && playback.status === 'playing') {
       speechRef.current.pause()
       dispatchPlayback({ type: 'PAUSE' })
       return
@@ -430,8 +452,12 @@ function App() {
     clearWait()
     runRef.current = { pages: 0, started: performance.now() }
 
+    followingRef.current = true
+    setFollowing(true)
+    setSpokenPage(currentPage)
+
     // Selection reading keeps its own path and reads only the selection.
-    const selected = selectionText()
+    const selected = fromVisiblePage ? '' : selectionText()
     if (selected) {
       runRef.current.pages = 1
       readingPageRef.current = currentPage
@@ -453,7 +479,8 @@ function App() {
       speechRef.current.speak({ text: '', chunks, rate: speedRef.current,
         onPage: page => {
           readingPageRef.current = page
-          setCurrentPage(page)
+          setSpokenPage(page)
+          if (followingRef.current) setCurrentPage(page)
           dispatchPlayback({ type: 'ADVANCE', page, totalPages: document.pageCount })
         },
         onError: () => dispatchPlayback({ type: 'FAIL', message: 'Voice stopped. Play to retry from this page.' }),
@@ -486,7 +513,7 @@ function App() {
   }
 
   const navigate = (page: number) => {
-    stop()
+    if (playbackRef.current.status !== 'ready') { followingRef.current = false; setFollowing(false) }
     setCurrentPage(page)
     setActivePanel('read')
   }
@@ -505,6 +532,7 @@ function App() {
       setDocumentState(null)
       setVoicePlan(null)
       setCurrentPage(1)
+      setSpokenPage(0)
       setZoom(100)
       setFitZoom(null)
       setManualZoom(false)
@@ -628,7 +656,6 @@ function App() {
                 <header className="preview-header">
                   <span><strong>Read</strong> Page {currentPage}</span>
                   <div className="preview-zoom-controls">
-                    <label className="dial-control preview-zoom">Zoom <output className="zoom-readout">{renderZoom}%</output><input aria-label="Preview zoom" type="range" min={MIN_PREVIEW_ZOOM} max={MAX_PREVIEW_ZOOM} step="1" value={renderZoom} onChange={(event) => { setManualZoom(true); setZoom(Number(event.target.value)) }} /></label>
                     <button type="button" className="fit-width-button" onClick={() => { setManualZoom(false); if (!isMobile) setFitRequested(true) }}>Fit width</button>
                   </div>
                   {isMobile ? <div className="lcd-panel">
@@ -659,11 +686,15 @@ function App() {
                       <label key={scope}><input type="radio" name="scope" checked={readScope === scope} onChange={() => setReadScope(scope)} /><span>{scope === 'page' ? 'This page only' : 'To the end'}</span></label>
                     ))}
                   </fieldset>
-                  <p className="panel-copy">Navigation stops reading. Play starts from the visible page.</p>
-                  {(
-                    <label className="dial-control bezel-dial">Speed <output>{speed.toFixed(2)}x</output><input aria-label="Reading speed" type="range" min="0.5" max="2" step="0.05" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} /></label>
-                  )}
+                  <p className="panel-copy">Browse without interrupting reading. Read from this page starts here.</p>
+                  {isMobile && rotaryControls}
+                  {!following && playback.status !== 'ready' && <div className="reading-position">
+                    <span>{playback.status === 'paused' ? 'Paused' : 'Playing'} page {playback.page || spokenPage}</span>
+                    <button className="fit-width-button" onClick={() => { followingRef.current = true; setFollowing(true); setCurrentPage(readingPageRef.current || playback.page) }}>Follow reading</button>
+                    <button className="fit-width-button" disabled={!documentState.characterCount || documentState.scanned || !speechRef.current.available} onClick={() => { stop(); read(true) }}>Read from this page</button>
+                  </div>}
                 </header>
+                <PageTurnViewer page={currentPage} pageCount={documentState.pageCount} allowSwipe={renderZoom <= 100 || (!manualZoom && fitZoom !== null)} onNavigate={navigate}>
                 <div className="preview-scroll" ref={previewScrollRef} tabIndex={0} aria-label="PDF preview and selectable text">
                   {pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={renderZoom} /> : <p>Loading preview...</p>}
                   {documentState.unmapped > 0 && <p className="warning-copy" role="alert">Some letters could not be extracted from this PDF. Reading may omit them. Try a text-exported PDF; local OCR is not available yet.</p>}
@@ -674,6 +705,7 @@ function App() {
                     </div>
                   </details>
                 </div>
+                </PageTurnViewer>
               </section>
             </div>
 
@@ -681,10 +713,11 @@ function App() {
               <footer className="transport" aria-label="Speech playback controls">
                 <div className="transport-buttons">
                   <button aria-label="Stop reading" onClick={stop} disabled={playback.status === 'ready'}><Icon name="stop" /></button>
-                  <button className="play-button" aria-label={playLabel} onClick={read} disabled={!documentState.characterCount || documentState.scanned || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
+                  <button className="play-button" aria-label={playLabel} onClick={() => read()} disabled={!documentState.characterCount || documentState.scanned || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
                 </div>
                 <div className="waveform" data-playing={playback.status === 'playing'} aria-hidden="true">{Array.from({ length: 32 }, (_, index) => <i key={index} style={{ height: `${8 + ((index * 17) % 25)}px` }} />)}</div>
                 <div className="playback-readout" aria-live="polite"><strong>{playback.status}</strong><span>{playback.message}</span></div>
+                {rotaryControls}
               </footer>
             )}
 
@@ -722,7 +755,7 @@ function App() {
                 <div className="mobile-transport">
                   <span className="mobile-page" aria-live="polite">Page {currentPage}</span>
                   <button aria-label="Stop reading" onClick={stop} disabled={playback.status === 'ready'}><Icon name="stop" /></button>
-                  <button className="play-button" aria-label={playLabel} onClick={read} disabled={!documentState.characterCount || documentState.scanned || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
+                  <button className="play-button" aria-label={playLabel} onClick={() => read()} disabled={!documentState.characterCount || documentState.scanned || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
                 </div>
               </nav>
             )}

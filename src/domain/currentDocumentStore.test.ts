@@ -32,6 +32,14 @@ const record = (id: string, text: string): CurrentDocumentRecord => ({
 afterEach(() => deleteCurrentDocumentDatabase())
 
 describe('one-slot current document storage', () => {
+  it('keeps spoken and browsed positions separate and ignores an old document save', async () => {
+    await replaceCurrentDocument(record('current', '%PDF current'))
+    const reader = { currentPage: 3, readingPage: 2, zoom: 100, speed: 1, readScope: 'document' as const }
+    await updateCurrentDocument({ reader }, 'current')
+    expect((await loadCurrentDocument())?.reader).toEqual(reader)
+    await updateCurrentDocument({ reader: { ...reader, currentPage: 9 } }, 'previous')
+    expect((await loadCurrentDocument())?.reader).toEqual(reader)
+  })
   it('restores PDF bytes, voice plan, settings, and reading position after reload', async () => {
     await replaceCurrentDocument(record('first', '%PDF first'))
     const restored = await loadCurrentDocument()

@@ -4,7 +4,7 @@
 // mobile view renders the page at the width the preview container actually offers rather
 // than at a fixed 100%. Shared by the app and its regression test.
 
-export const MIN_PREVIEW_ZOOM = 50
+export const MIN_PREVIEW_ZOOM = 25
 export const MAX_PREVIEW_ZOOM = 180
 
 /**

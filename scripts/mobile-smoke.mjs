@@ -133,7 +133,7 @@ check(spoken >= 1, `Continuous reading stopped after ${spoken} page(s)`)
 check(readTexts.includes('LATTEREADER TEST STORY'), 'First page text was never read')
 check(readTexts.includes('SECOND PAGE'), 'Reading did not continue onto the second page')
 check((await statusText()).includes('Finished the document'), 'Playback did not report the end of the document')
-check(await page.locator('.preview-header').innerText().then(text => text.includes('Page 2')), 'The preview did not follow playback to the last page')
+check((await page.getByLabel('Current page').innerText()).startsWith('2'), 'The preview did not follow playback to the last page')
 
 // The stored reading position must follow playback, not just the on-screen preview.
 // The position is written on a short debounce, so poll briefly for it to land.

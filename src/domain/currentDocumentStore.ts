@@ -5,6 +5,8 @@ export const CURRENT_SCHEMA_VERSION = 2
 
 export interface PersistedReaderState {
   currentPage: number
+  /** Last spoken page, independent of the browsed page. Never auto-start on restore. */
+  readingPage?: number
   zoom: number
   speed: number
   readScope: ReadScope
@@ -113,13 +115,14 @@ export async function validateAndReplaceCurrentDocument<T>(
 
 export async function updateCurrentDocument(
   update: Partial<Pick<CurrentDocumentRecord, 'reader' | 'voicePlan'>>,
+  expectedDocumentId?: string,
 ): Promise<void> {
   const database = await openDatabase()
   try {
     const transaction = database.transaction(STORE_NAME, 'readwrite')
     const store = transaction.objectStore(STORE_NAME)
     const current = migrateCurrentDocument(await requestResult(store.get(CURRENT_KEY)))
-    if (current) store.put({ ...current, ...update }, CURRENT_KEY)
+    if (current && (!expectedDocumentId || current.id === expectedDocumentId)) store.put({ ...current, ...update }, CURRENT_KEY)
     await transactionDone(transaction)
   } finally {
     database.close()

@@ -8,6 +8,7 @@ describe('computeFitZoom', () => {
   it('fits a 612px page into the phone preview content width', () => {
     // 390px viewport: 390 client width minus the preview scroller's 18px padding each side.
     expect(computeFitZoom(354, PAGE_WIDTH)).toBe(57)
+    expect(computeFitZoom(284, PAGE_WIDTH)).toBe(46) // 320px viewport must fit below 50%.
     // 360px and 414px viewports.
     expect(computeFitZoom(324, PAGE_WIDTH)).toBe(52)
     expect(computeFitZoom(378, PAGE_WIDTH)).toBe(61)

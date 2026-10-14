@@ -450,3 +450,86 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   .segmented-control span { font-size: 9px; letter-spacing: 0; }
   .preview-header .bezel-dial { grid-column: 2; grid-row: 3; }
 }
+
+/* Side arrows sit outside the page, never over readable PDF content. */
+.page-turn-viewer { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; flex: 1; min-height: 0; background: #221a13; }
+.page-turn-viewer > .preview-scroll { grid-column: 2; grid-row: 1; }
+.viewer-page-arrow { align-self: center; width: 40px; height: 44px; padding: 8px; border: 1px solid var(--crema); border-radius: 10px; background: var(--bean); color: var(--foam); }
+.viewer-page-arrow svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.viewer-previous { grid-column: 1; grid-row: 1; justify-self: center; }
+.viewer-next { grid-column: 3; grid-row: 1; justify-self: center; }
+@media (max-width: 780px), (max-height: 600px) {
+  .page-turn-viewer { grid-template-columns: 44px minmax(0,1fr) 44px; padding-top: 6px; }
+  .page-turn-viewer > .preview-scroll { grid-column: 1 / -1; grid-row: 2; }
+  .viewer-page-arrow { width: 44px; border-radius: 8px; }
+  .viewer-previous { margin-inline-start: 12px; justify-self: start; }
+  .viewer-next { margin-inline-end: 12px; justify-self: end; }
+  .page-turn-viewer::before { content: 'Turn page'; grid-column: 2; grid-row: 1; align-self: center; justify-self: center; color: var(--muted); font-size: 12px; }
+}
+
+.reading-position { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--foam); font-size: 12px; }
+.reading-position > span { margin-inline-end: auto; }
+/* Relative, tactile dials share one baseline and one quiet numeric treatment. */
+.rotary-rack { display: flex; align-items: center; gap: 24px; }
+.rotary-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rotary-dial { position: relative; width: 60px; height: 60px; flex: 0 0 60px; border-radius: 50%; }
+.rotary-track { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 225deg, var(--caramel) 0deg var(--dial-sweep), var(--crema) var(--dial-sweep) 270deg, transparent 270deg); mask: radial-gradient(transparent 64%, #000 66%); }
+.rotary-face { position: absolute; inset: 7px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #78624b, #3f3226 65%, #30261d); box-shadow: 0 3px 5px #0009, inset 0 1px 1px #ffffff24, inset 0 -2px 3px #0007; }
+.rotary-pointer { position: absolute; inset: 0; transform: rotate(var(--dial-angle)); }
+.rotary-pointer::after { content: ''; position: absolute; top: 5px; left: calc(50% - 1.5px); width: 3px; height: 10px; border-radius: 2px; background: var(--butter); }
+.rotary-dial input { position: absolute; inset: 0; margin: 0; width: 100%; height: 100%; opacity: 0; touch-action: none; cursor: ns-resize; }
+.rotary-dial:has(input:focus-visible) { outline: 3px solid var(--butter); outline-offset: 3px; }
+.rotary-caption { display: grid; gap: 4px; }
+.rotary-caption > label { color: var(--foam); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.rotary-value { position: relative; min-width: 76px; height: 42px; border: 1px solid var(--crema); border-radius: 8px; background: var(--espresso); }
+.rotary-value output { display: grid; place-items: center; height: 100%; padding-inline: 8px; color: var(--butter); font: 500 16px/1 DM Mono, monospace; font-variant-numeric: tabular-nums; }
+.rotary-value input { position: absolute; inset: 0; width: 100%; height: 100%; padding: 6px; border: 0; border-radius: 7px; background: var(--espresso); color: var(--butter); font: 500 16px DM Mono, monospace; font-variant-numeric: tabular-nums; opacity: 0; cursor: text; }
+.rotary-value:focus-within input { opacity: 1; }
+.rotary-control[data-dragging=true] .rotary-face { box-shadow: 0 1px 2px #0009, inset 0 2px 4px #0008; }
+.rotary-control[data-disabled=true] { opacity: .38; }
+.rotary-control[data-disabled=true] input { cursor: not-allowed; }
+@media (hover: hover) {
+  .rotary-dial:has(input:not(:disabled):hover) .rotary-face { box-shadow: 0 3px 5px #0009, inset 0 1px 2px #ffffff45, inset 0 -2px 3px #0007; }
+  .rotary-value:has(input:not(:disabled):hover) { border-color: var(--caramel); }
+}
+@media (forced-colors: active) {
+  .rotary-dial input, .rotary-value input { opacity: 1; }
+  .rotary-dial { outline: 1px solid ButtonText; }
+}
+@media (min-width: 781px) and (min-height: 601px) {
+  .preview-header { grid-template-columns: max-content minmax(180px,1fr) max-content; gap: 16px; }
+  .preview-header .page-navigation { grid-column: 1; grid-row: 1; }
+  .preview-header .segmented-control { grid-column: 2; grid-row: 1; justify-self: start; }
+  .preview-header .preview-zoom-controls { grid-column: 3; grid-row: 1; }
+  .transport { grid-template-columns: auto minmax(90px,1fr) minmax(160px,240px) auto; min-height: 80px; padding-block: 8px; }
+  .transport .rotary-rack { margin-inline-start: 4px; }
+}
+@media (max-width: 780px), (max-height: 600px) {
+  .preview-header { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px 12px; padding: 8px 12px; }
+  .preview-header > span { display: none; }
+  .preview-header .lcd-panel { grid-column: 1 / -1; grid-row: 1; padding: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .lcd-panel > progress { display: none; }
+  .page-jump { margin: 0; display: grid; gap: 2px; font-size: 11px; letter-spacing: 0; text-transform: none; }
+  .reading-position { grid-row: 4; }
+  .page-jump input { min-height: 44px; }
+  .page-stepper { gap: 8px; }
+  .page-stepper button { width: 44px; height: 44px; }
+  .page-stepper output strong { font-size: 20px; }
+  .preview-header .segmented-control { grid-column: 1; grid-row: 2; min-width: 0; }
+  .segmented-control span { min-height: 40px; display: grid; place-items: center; padding: 6px; font-size: 11px; letter-spacing: 0; text-transform: none; }
+  .preview-header .preview-zoom-controls { grid-column: 2; grid-row: 2; min-width: 0; }
+  .fit-width-button { min-height: 44px; padding-inline: 10px; font-size: 11px; }
+  .preview-header .rotary-rack { grid-column: 1 / -1; grid-row: 3; justify-content: space-between; gap: 16px; }
+  .rotary-control.preview-zoom { min-width: 0; flex: 0 1 auto; }
+  .rotary-value { min-width: 72px; height: 46px; }
+  .rotary-dial { width: 56px; height: 56px; flex-basis: 56px; }
+  .rotary-rack .rotary-control { gap: 6px; }
+}
+@media (max-height: 600px) {
+  .topbar { min-height: 60px; padding-block: 8px; }
+  .preview-header { padding-block: 2px; gap: 2px 10px; }
+  .preview-header .lcd-panel { padding: 4px; }
+  .page-jump { display: flex; gap: 8px; }
+  .rotary-caption { grid-template-columns: auto auto; align-items: center; gap: 6px; }
+  .rotary-dial { width: 48px; height: 48px; flex-basis: 48px; }
+}
