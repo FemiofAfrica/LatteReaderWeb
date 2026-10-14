@@ -48,7 +48,7 @@ for (const viewport of VIEWPORTS) {
   await page.goto(baseURL, { waitUntil: 'networkidle' })
   await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor()
   await page.locator('input[type=file]').setInputFiles(longFixture)
-  await page.waitForFunction(() => document.body.textContent?.includes('Extraction complete'), undefined, { timeout: 20000 })
+  await page.waitForFunction(() => document.body.textContent?.includes('Ready to read'), undefined, { timeout: 20000 })
   await page.locator('.page-stage canvas').waitFor({ timeout: 20000 })
   await page.waitForTimeout(400)
 

@@ -5,13 +5,9 @@ type AudioPart = { part: LocalPart; buffer: AudioBuffer }
 export type LocalStatus = 'off' | 'preparing' | 'ready' | 'buffering' | 'playing' | 'paused' | 'error'
 
 
-/**
- * The public runtime is the worker this app builds and serves itself. It loads
- * the pinned assets from `/voice/narrator/`, our own origin only.
- *
- * The private trial keeps its own worker, served exclusively by
- * `scripts/private-narrator-preview.mjs` from assets that stay outside the
- * repository, so the user's own device testing is unaffected by publication.
+/** One built worker for normal and private previews. The private marker never
+ * selects a historical comparator. All voice files come from this origin only,
+ * after explicit download consent; browser speech remains the default.
  */
 const builtWorker = () => new Worker(new URL('../workers/narrator.worker.ts', import.meta.url), { type: 'module' })
 
@@ -22,7 +18,7 @@ const builtWorker = () => new Worker(new URL('../workers/narrator.worker.ts', im
  */
 export class LocalNarratorEngine implements SpeechEngine {
   readonly id = 'kitten-micro-jasper'
-  readonly label = 'Local narrator (Jasper)'
+  readonly label = 'Natural voice'
   private worker: Worker | null = null
   private context: AudioContext | null = null
   private serial = 0

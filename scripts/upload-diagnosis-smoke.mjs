@@ -71,7 +71,7 @@ try {
 
   // Establish a saved document that every rejected upload must leave alone.
   await page.locator('input[type=file]').setInputFiles(resolve(root, `tests/fixtures/${savedFixture}`))
-  await page.getByText('Extraction complete', { exact: true }).waitFor({ timeout: 20000 })
+  await page.getByText('Ready to read', { exact: true }).waitFor({ timeout: 20000 })
   const savedName = (await page.locator('.filename').innerText()).trim()
   assert.equal(savedName, savedFixture, 'the working document was not established')
 
@@ -120,7 +120,7 @@ try {
   if (markerFailure) {
     markerOutcome = `PDF.js refused a file with leading bytes as ${markerFailure.errorCode}; the header check did not collapse it into "not a PDF"`
   } else {
-    await page.getByText('Extraction complete', { exact: true }).waitFor({ timeout: 20000 })
+    await page.getByText('Ready to read', { exact: true }).waitFor({ timeout: 20000 })
     assert.equal((await page.locator('.filename').innerText()).trim(), markerFixture, 'a PDF with leading bytes was wrongly rejected')
     assert.equal(await page.locator('[role=alert]').count(), 0, 'a successful upload left an error message')
     markerOutcome = 'opened, so leading bytes before the header are accepted'

@@ -19,7 +19,7 @@ await page.addInitScript(()=>{
 const snap=()=>page.evaluate(()=>JSON.parse(JSON.stringify(window.__proof)));
 const state=s=>page.locator(`[data-local-status=${s}]`).waitFor({timeout:180000});
 await page.goto(base);await page.waitForTimeout(800);assert.equal(result.assets.length,0);
-await page.locator('input[type=file]').setInputFiles('tests/fixtures/misaki-owned.pdf');await page.waitForFunction(()=>document.body.textContent.includes('Extraction complete')||document.body.textContent.includes('Ready to read'));
+await page.locator('input[type=file]').setInputFiles('tests/fixtures/misaki-owned.pdf');await page.waitForFunction(()=>document.body.textContent.includes('Ready to read')||document.body.textContent.includes('Ready to read'));
 await page.locator('.local-narrator-controls select').selectOption('local');await page.waitForTimeout(500);assert.equal(result.assets.length,0);
 result.phases.beforeEnable={downloads:0};await page.locator('.local-narrator-controls button').first().click();await state('ready');
 const cold=await snap();assert.equal(cold.ready[0].graphSha256,pins.graph.sha256);assert.equal(cold.ready[0].voiceSha256,pins.voice.sha256);assert.equal(cold.ready[0].runtimeWasmSha256,pins.runtime.wasm.sha256);

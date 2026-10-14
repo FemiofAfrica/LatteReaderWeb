@@ -18,7 +18,7 @@ const open = async (width, height, touch = false) => {
   })
   await page.goto(url)
   await page.locator('input[type=file]').setInputFiles('tests/fixtures/spoken-position.pdf')
-  await page.waitForFunction(() => document.body.textContent.includes('Extraction complete'))
+  await page.waitForFunction(() => document.body.textContent.includes('Ready to read'))
   await page.locator('canvas').waitFor()
   await page.waitForTimeout(150)
   return page
@@ -68,7 +68,8 @@ for (const width of [390, 1440]) {
   await p.getByRole('button', { name: 'Read-along text', exact: true }).click()
   await p.getByRole('button', { name: 'Start reading' }).click()
   assert.equal(await p.locator('mark').count(), 0, 'no fake sentence highlight from utterance start')
-  assert.match(await p.getByRole('region', { name: 'Read-along transcript' }).innerText(), /Waiting for voice boundaries/)
+  assert.match(await p.getByRole('region', { name: 'Read-along text' }).innerText(), /Your voice shares its place only when a passage starts or ends/)
+  assert.doesNotMatch(await p.getByRole('region', {name:'Read-along text'}).locator('.panel-copy').innerText(), /boundar|utterance|chunk|overlay/i)
   const first = await p.evaluate(() => __speech.current.text)
   const repeated = first.lastIndexOf('Same fine')
   await boundary(p, repeated)

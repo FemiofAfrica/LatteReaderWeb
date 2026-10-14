@@ -51,7 +51,7 @@ await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor()
 await page.locator('input[type=file]').setInputFiles(fixture)
 // Extraction status lives in the Document panel, which is hidden while Preview is the
 // default mobile panel, so read the document text rather than a visible label.
-await page.waitForFunction(() => document.body.textContent?.includes('Extraction complete'), undefined, { timeout: 20000 })
+await page.waitForFunction(() => document.body.textContent?.includes('Ready to read'), undefined, { timeout: 20000 })
 await page.locator('.page-text').getByText('LATTEREADER TEST STORY').waitFor({ timeout: 20000, state: 'attached' })
 
 // 1. The bar exists with all three panels and a pinned transport.
@@ -114,8 +114,9 @@ check(await page.getByRole('radio').count() === 2, 'Reading scope control is not
 await page.screenshot({ path: path.join(root, 'tests/artifacts/mobile-panel-read.png') })
 
 await page.getByRole('tab', { name: 'Voices' }).click()
-check(await page.getByText('Browser voice', { exact: true }).isVisible(), 'Voices panel did not open')
-check(await page.getByRole('button', { name: 'Analyze Characters' }).isVisible(), 'Character voices are missing from the Voices panel')
+check(await page.locator('.engine-readout strong').isVisible(), 'Voices panel did not open')
+check(await page.locator('.engine-readout strong').innerText()==='Browser voice' && await page.getByLabel('Reading voice',{exact:true}).inputValue()==='browser', 'Voice readout and choice disagree')
+check(await page.getByRole('button', { name: 'Find character voices' }).isVisible(), 'Character voices are missing from the Voices panel')
 await page.screenshot({ path: path.join(root, 'tests/artifacts/mobile-panel-voices.png') })
 await page.getByRole('tab', { name: 'Read' }).click()
 

@@ -30,7 +30,8 @@
     "voice:manifest": "node scripts/stage-misaki-assets.mjs",
     "voice:smoke": "node scripts/misaki-reader-smoke.mjs",
     "narrator:stage": "node scripts/stage-misaki-assets.mjs",
-    "test:narrator": "python3 tests/fixtures/generate_misaki_fixture.py && node scripts/misaki-reader-smoke.mjs",
+    "test:narrator": "python3 tests/fixtures/generate_misaki_fixture.py && node scripts/misaki-reader-smoke.mjs && node scripts/misaki-controls-smoke.mjs",
+    "test:plain-ui": "node scripts/plain-ui-smoke.mjs",
     "typecheck": "tsc -b --pretty false",
     "build": "tsc -b && vite build",
     "preview": "vite preview"

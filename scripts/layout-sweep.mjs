@@ -32,7 +32,7 @@ for (const viewport of WIDTHS) {
   await page.locator('input[type=file]').setInputFiles(fixture)
   // The extraction label lives in the Document panel, hidden at mobile widths, so wait on
   // document text instead of a visible element.
-  await page.waitForFunction(() => document.body.textContent?.includes('Extraction complete'), undefined, { timeout: 20000 })
+  await page.waitForFunction(() => document.body.textContent?.includes('Ready to read'), undefined, { timeout: 20000 })
 
   const label = `${viewport.width}x${viewport.height}`
   const layout = await page.evaluate(() => {

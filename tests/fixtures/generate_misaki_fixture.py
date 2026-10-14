@@ -10,3 +10,8 @@ for text in pages:
         c.drawString(48,720-i*24,line)
     c.showPage()
 c.save()
+r = canvas.Canvas(str(root/'misaki-refusal.pdf'), pagesize=(612,792))
+r.setFont('Helvetica',8)
+r.drawString(30,720,'x'*70)
+r.showPage()
+r.save()

@@ -121,7 +121,7 @@ try {
   const initialPdfRequests = requests.filter((url) => /pdfjs|\/assets\/(?:pdf[-.]|loadPdf[-.])|\/pdf\/loadPdf/.test(url))
   assert.deepEqual(initialPdfRequests, [], 'PDF code was fetched before a document was opened')
   await page.locator('input[type=file]').setInputFiles(path.join(root, 'tests/fixtures/latte-reader-text-fixture.pdf'))
-  await page.getByText('Extraction complete', { exact: true }).waitFor({ timeout: 15000 })
+  await page.getByText('Ready to read', { exact: true }).waitFor({ timeout: 15000 })
   // The transcript sits behind a disclosure now, so its text is present but not visible.
   await page.getByText('LATTEREADER TEST STORY').waitFor({ state: 'attached' })
   if (compatibility) {

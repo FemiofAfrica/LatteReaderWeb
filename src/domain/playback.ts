@@ -28,7 +28,7 @@ export const initialPlaybackState: PlaybackState = {
   status: 'ready',
   scope: 'document',
   page: 0,
-  message: 'Ready to read',
+  message: 'Press play to begin',
   display: 'Ready',
 }
 
@@ -42,7 +42,7 @@ export function playbackReducer(state: PlaybackState, action: PlaybackAction): P
   switch (action.type) {
     case 'PLAY': return { status: 'playing', display: 'Reading', scope: action.scope, page: action.page ?? state.page, message: scopeMessage(action.scope) }
     case 'RESET': return initialPlaybackState
-    case 'WAIT': return { status: 'playing', waiting: true, display: 'Waiting for text', scope: action.scope, page: action.page, message: 'Waiting for text extraction before continuous reading' }
+    case 'WAIT': return { status: 'playing', waiting: true, display: 'Waiting for text', scope: action.scope, page: action.page, message: 'Preparing the text before reading' }
     case 'ADVANCE': return { ...state, status: 'playing', display: 'Reading', page: action.page, message: `Reading page ${action.page} of ${action.totalPages}` }
     case 'SEEK': return { ...state, page: action.page, message: `${state.status === 'paused' ? 'Paused' : state.status === 'playing' ? 'Reading' : 'Ready'} on page ${action.page}` }
     case 'PAUSE': return { ...state, status: 'paused', display: 'Paused', message: 'Playback paused' }

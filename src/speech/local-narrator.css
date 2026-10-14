@@ -1,5 +1,6 @@
 .local-narrator-controls { min-width: 0; }
 .local-narrator-controls label { display: block; }
-.local-narrator-controls select { display: block; width: 100%; max-width: 100%; margin-top: 0.4rem; }
+.local-narrator-controls select { display: block; width: 100%; max-width: 100%; margin-top: 0.4rem; min-height: 44px; }
+.local-narrator-controls [data-local-notices] a { display: inline-flex; align-items: center; min-height: 24px; }
 .local-narrator-controls .secondary-button { white-space: normal; max-width: 100%; margin-bottom: 0.5rem; }
 .local-narrator-controls p { overflow-wrap: anywhere; }

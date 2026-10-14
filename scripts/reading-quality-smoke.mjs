@@ -28,7 +28,7 @@ await page.addInitScript(() => {
     speak(u) { window.__current = u; window.__inputs.push(u.text); u.onstart?.() },
   } })
 })
-const ready = () => page.waitForFunction(() => document.body.textContent.includes('Extraction complete'))
+const ready = () => page.waitForFunction(() => document.body.textContent.includes('Ready to read'))
 const pageNumber = () => page.getByLabel('Current page').innerText()
 await page.goto(url)
 await page.locator('input[type=file]').setInputFiles('tests/fixtures/reading-quality.pdf')
@@ -90,7 +90,8 @@ for (const width of [360, 390, 504, 768, 1440]) {
 }
 await page.locator('input[type=file]').setInputFiles('tests/fixtures/reading-quality-unmapped.pdf')
 await ready()
-await page.getByRole('alert').filter({ hasText:'Some letters could not be extracted' }).waitFor()
+await page.getByRole('alert').filter({ hasText:'Some letters cannot be read' }).waitFor()
+assert.doesNotMatch(await page.getByRole('alert').filter({hasText:'Some letters cannot be read'}).innerText(), /extracted|OCR|worker/)
 await page.getByRole('button', { name: 'Start reading' }).click()
 assert.match(await page.evaluate(() => window.__inputs.at(-1)), /�/)
 assert.doesNotMatch(await page.evaluate(() => window.__inputs.at(-1)), /\u0000/)

@@ -17,7 +17,7 @@ for (const width of [390, 1440]) {
   })
   await p.goto(url)
   await p.locator('input[type=file]').setInputFiles('tests/fixtures/selection-quality.pdf')
-  await p.waitForFunction(() => document.body.textContent.includes('Extraction complete'))
+  await p.waitForFunction(() => document.body.textContent.includes('Ready to read'))
   await p.getByRole('button', { name: 'Next page', exact: true }).click()
   await p.getByRole('button', { name: 'Read-along text', exact: true }).click()
   const text = await p.locator('.read-along-text').textContent()

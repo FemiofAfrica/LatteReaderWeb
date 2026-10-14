@@ -21,13 +21,14 @@ export interface ReadingStatusInput {
 }
 
 export function readingStatusText(input: ReadingStatusInput): string {
-  if (input.extraction === 'error') return 'Text extraction error'
+  if (input.extraction === 'error') return 'Could not read the text'
   if (input.engine === 'local') {
     // The local model load takes tens of seconds and is not a fault, so it must
     // never read as "Voice unavailable" while it runs.
-    if (input.localStatus === 'preparing') return 'Loading local voice'
-    if (input.localStatus === 'buffering') return 'Buffering local voice'
+    if (input.localStatus === 'preparing') return 'Preparing voice…'
+    if (input.localStatus === 'buffering') return 'Preparing reading…'
     if (input.localStatus === 'error') return 'Voice unavailable'
+    if (input.localStatus === 'off' && input.pagesWithReadableText) return 'Download voice first'
     // A loaded voice with nothing playing invites playback. "Stopped" reads like
     // a fault, and switches to the local engine stop playback by design.
     if (input.localStatus === 'ready'
@@ -44,8 +45,8 @@ export function readingStatusText(input: ReadingStatusInput): string {
 
 /** Plain-language panel line for the private local narrator. */
 export function localVoiceCopy(localStatus: LocalVoiceStatus): string {
-  if (localStatus === 'ready') return 'Voice ready. Press Play.'
-  if (localStatus === 'error') return 'Local voice failed. Retry or use Browser default.'
-  if (localStatus === 'preparing') return 'Loading the local voice. This can take up to a minute.'
-  return `Local voice: ${localStatus}`
+  if (localStatus === 'ready') return 'Press play to begin'
+  if (localStatus === 'error') return 'Could not use this voice. Try again or choose Browser voice.'
+  if (localStatus === 'preparing') return 'Preparing voice… This may take a minute.'
+  return ({off: 'Download the voice to begin', buffering: 'Preparing reading…', playing: 'Reading', paused: 'Paused'} as const)[localStatus]
 }

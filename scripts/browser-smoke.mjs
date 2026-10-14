@@ -49,7 +49,7 @@ const initialPdfRequests = initialRequests.filter((url) => /pdfjs|\/assets\/(?:p
 check(initialPdfRequests.length === 0, `PDF modules loaded before opening a document: ${initialPdfRequests.join(', ')}`)
 await page.locator('input[type=file]').setInputFiles(fixture)
 try {
-  await page.getByText('Extraction complete', { exact: true }).waitFor({ timeout: 15000 })
+  await page.getByText('Ready to read', { exact: true }).waitFor({ timeout: 15000 })
 } catch (error) {
   console.error(await page.locator('body').innerText())
   throw error
@@ -72,7 +72,7 @@ check((await page.getByLabel('Current page').innerText()).startsWith('1'), 'Prev
 await page.getByLabel('Preview zoom').fill('120')
 check((await page.locator('.zoom-readout').innerText()).includes('120%'), 'Zoom control did not update the preview')
 
-await page.getByRole('button', { name: 'Analyze Characters' }).click()
+await page.getByRole('button', { name: 'Find character voices' }).click()
 await page.getByText('Alice', { exact: true }).waitFor()
 await page.getByText('Bob', { exact: true }).waitFor()
 check((await page.locator('.speaker-list').innerText()).includes('3 voices'), 'Voice plan did not include narrator plus two speakers')
@@ -85,7 +85,7 @@ await page.getByRole('button', { name: 'Next page' }).click()
 await page.getByLabel('Reading speed').fill('1.25')
 await page.waitForTimeout(350)
 await page.reload({ waitUntil: 'networkidle' })
-await page.getByText('Extraction complete', { exact: true }).waitFor({ timeout: 15000 })
+await page.getByText('Ready to read', { exact: true }).waitFor({ timeout: 15000 })
 check((await page.getByLabel('Current page').innerText()).startsWith('2'), 'Reload did not restore the reading page')
 check((await page.locator('.zoom-readout').innerText()).includes('120%'), 'Reload did not restore zoom')
 check(await page.getByText('Alice', { exact: true }).isVisible(), 'Reload did not restore the voice plan')
@@ -146,7 +146,7 @@ check(storedDocument.currentPage === 2, 'IndexedDB did not retain the current re
 
 page.once('dialog', (dialog) => dialog.accept())
 await page.locator('.document-details summary').click()
-await page.getByRole('button', { name: 'Delete local data' }).click()
+await page.getByRole('button', { name: 'Delete saved PDF' }).click()
 await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor()
 
 check(fakeWorkerWarnings.length === 0, 'PDF.js fell back to a fake worker')
