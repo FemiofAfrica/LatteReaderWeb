@@ -11,6 +11,7 @@ import {
   type CurrentDocumentRecord,
 } from './domain/currentDocumentStore'
 import { availabilityWarning, emptyDocumentState, extractionErrorCopy, hasUsableText, isExtractionMessage, type DocumentState, type ExtractionMessage, type ExtractionErrorCode } from './domain/document'
+import { readingStatusText, localVoiceCopy } from './domain/statusText'
 import { uploadDocument } from './domain/uploadFlow'
 import { computeFitZoom, MAX_PREVIEW_ZOOM, MIN_PREVIEW_ZOOM } from './domain/fit'
 import {
@@ -530,11 +531,14 @@ function App() {
     if (playback.status === 'playing') { pendingSeekRef.current = null; launch() }
     else { pendingSeekRef.current = launch } // A stopped/paused seek never starts audio.
   }
-  const readingStatus = documentState?.extraction === 'error' ? 'Text extraction error'
-    : engine === 'local' && localStatus === 'buffering' ? 'Buffering local voice'
-    : !speechRef.current.available ? 'Voice unavailable'
-    : documentState?.extraction === 'complete' && !documentState.pagesWithReadableText ? 'No readable text'
-    : playback.display ?? 'Ready'
+  const readingStatus = readingStatusText({
+    extraction: documentState?.extraction,
+    pagesWithReadableText: documentState?.pagesWithReadableText ?? 0,
+    engine: engine === 'local' ? 'local' : 'browser',
+    localStatus,
+    voiceAvailable: speechRef.current.available,
+    playback: { status: playback.status, display: playback.display },
+  })
   const progressControl = <ReadingProgress value={readingOffset} max={timeline.text.length} status={isMobile ? readingStatus : undefined}
     disabled={!timeline.text.length || documentState?.extraction !== 'complete' || playback.scope === 'selection' && playback.status !== 'ready'}
     onSeek={seekReading} onSkip={direction => seekReading(sentenceSkip(timeline, readingOffset, direction))} />
@@ -787,7 +791,7 @@ function App() {
                       <p className="panel-copy">Follows the playing chunk, not individual words. Cross-page follow moves at chunk completion. Foreground only.</p>
                       <button type="button" className="secondary-button" disabled={localStatus !== 'off' && localStatus !== 'error'} onClick={() => void localRef.current?.prepare()}>Enable local narrator</button>
                       <button type="button" className="secondary-button" onClick={() => { stop(); localRef.current?.dispose() }}>Cancel and release voice</button>
-                      <p className="panel-copy" role="status" data-local-status={localStatus}>{localStatus === 'ready' ? 'Voice ready. Press Play.' : localStatus === 'error' ? 'Local voice failed. Retry or use Browser default.' : `Local voice: ${localStatus}`}</p>
+                      <p className="panel-copy" role="status" data-local-status={localStatus}>{localVoiceCopy(localStatus)}</p>
                     </>}
                   </div>}
                   <div className="engine-readout"><span className="status-led ready" aria-hidden="true" /><strong>{engine === 'local' ? 'Jasper (private trial)' : 'Browser voice'}</strong></div>

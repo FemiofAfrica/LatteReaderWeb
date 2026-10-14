@@ -1,0 +1,68 @@
+import { describe, expect, it } from 'vitest'
+import { readingStatusText, localVoiceCopy, type ReadingStatusInput } from './statusText'
+
+const base: ReadingStatusInput = {
+  extraction: 'complete',
+  pagesWithReadableText: 12,
+  engine: 'local',
+  localStatus: 'off',
+  voiceAvailable: false,
+  playback: { status: 'ready', display: 'Ready' },
+}
+
+const input = (overrides: Partial<ReadingStatusInput>): ReadingStatusInput => ({ ...base, ...overrides })
+
+describe('reading status', () => {
+  it('reports the local model load as loading, never as unavailable', () => {
+    const status = readingStatusText(input({ localStatus: 'preparing', voiceAvailable: false }))
+    expect(status).toBe('Loading local voice')
+    expect(status).not.toBe('Voice unavailable')
+  })
+
+  it('keeps buffering ahead of the preparing copy', () => {
+    expect(readingStatusText(input({ localStatus: 'buffering', voiceAvailable: true }))).toBe('Buffering local voice')
+  })
+
+  it('reports Voice unavailable for a failed local voice and for the browser with no usable voice', () => {
+    expect(readingStatusText(input({ localStatus: 'error', voiceAvailable: false }))).toBe('Voice unavailable')
+    expect(readingStatusText(input({ engine: 'browser', localStatus: 'off', voiceAvailable: false }))).toBe('Voice unavailable')
+  })
+
+  it('never says Voice unavailable while the local voice is loading, in any playback state', () => {
+    for (const playback of [
+      { status: 'ready' as const, display: 'Ready' as const },
+      { status: 'ready' as const, display: 'Stopped' as const },
+      { status: 'playing' as const, display: 'Reading' as const },
+      { status: 'ready' as const, display: 'Finished' as const },
+    ]) {
+      expect(readingStatusText(input({ localStatus: 'preparing', voiceAvailable: false, playback }))).toBe('Loading local voice')
+      expect(readingStatusText(input({ localStatus: 'buffering', voiceAvailable: false, playback }))).toBe('Buffering local voice')
+    }
+  })
+
+  it('lets a failed extraction outrank the voice state', () => {
+    expect(readingStatusText(input({ extraction: 'error', localStatus: 'preparing' }))).toBe('Text extraction error')
+  })
+
+  it('keeps the browser engine reading from the playback display', () => {
+    expect(readingStatusText(input({ engine: 'browser', voiceAvailable: true }))).toBe('Ready')
+    expect(readingStatusText(input({ engine: 'browser', voiceAvailable: true, playback: { status: 'playing', display: 'Reading' } }))).toBe('Reading')
+    expect(readingStatusText(input({ engine: 'browser', voiceAvailable: true, playback: { status: 'ready', display: 'Stopped' } }))).toBe('Stopped')
+  })
+
+  it('reports a document with no readable text', () => {
+    expect(readingStatusText(input({ pagesWithReadableText: 0, voiceAvailable: true }))).toBe('No readable text')
+  })
+})
+
+describe('local narrator panel copy', () => {
+  it('explains the model load in plain words', () => {
+    expect(localVoiceCopy('preparing')).toBe('Loading the local voice. This can take up to a minute.')
+  })
+
+  it('keeps the existing ready and error copy', () => {
+    expect(localVoiceCopy('ready')).toBe('Voice ready. Press Play.')
+    expect(localVoiceCopy('error')).toBe('Local voice failed. Retry or use Browser default.')
+    expect(localVoiceCopy('off')).toBe('Local voice: off')
+  })
+})
