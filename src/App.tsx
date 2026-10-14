@@ -11,7 +11,7 @@ import {
   type CurrentDocumentRecord,
 } from './domain/currentDocumentStore'
 import { availabilityWarning, emptyDocumentState, extractionErrorCopy, hasUsableText, isExtractionMessage, type DocumentState, type ExtractionMessage, type ExtractionErrorCode } from './domain/document'
-import { readingStatusText, localVoiceCopy } from './domain/statusText'
+import { readingStatusText, localVoiceCopy, narratorNoticeCopy } from './domain/statusText'
 import { uploadDocument } from './domain/uploadFlow'
 import { computeFitZoom, MAX_PREVIEW_ZOOM, MIN_PREVIEW_ZOOM } from './domain/fit'
 import {
@@ -141,6 +141,14 @@ function App() {
   const [defaultVoiceKey, setDefaultVoiceKey] = useState<string | undefined>()
   const [voiceList, setVoiceList] = useState<VoiceListState>({ voices: [], status: 'loading' })
   const [voiceFallback, setVoiceFallback] = useState(false)
+  // The voice reports, without any document text, that part of a passage could not be
+  // spoken. Reading continues, so this is a one-line notice and not a stop.
+  const [narratorNotice, setNarratorNotice] = useState(false)
+  useEffect(() => {
+    const seen = () => setNarratorNotice(true)
+    window.addEventListener('latte-local-notice', seen)
+    return () => window.removeEventListener('latte-local-notice', seen)
+  }, [])
   useEffect(() => watchBrowserVoices(setVoiceList), [])
   const defaultVoiceRef = useRef(defaultVoiceKey)
   defaultVoiceRef.current = defaultVoiceKey
@@ -564,6 +572,7 @@ function App() {
     }
     setPosition(null); pendingSeekRef.current = null
     clearWait()
+    setNarratorNotice(false)
     runRef.current = { pages: 0, started: performance.now() }
 
     followingRef.current = true
@@ -612,6 +621,7 @@ function App() {
       toEnd ? 'document' : 'page', voicePlanRef.current), selected, toEnd)
     if (!chunks.length) return
     clearWait(); speechRef.current.stop(); pendingSeekRef.current = null; setPosition(null)
+    setNarratorNotice(false)
     followingRef.current = true; setFollowing(true)
     const scope = toEnd ? 'document' : 'selection'
     sessionRef.current = chunks; sessionScopeRef.current = scope; setSessionChunks(chunks); setReadingOffset(0)
@@ -624,6 +634,7 @@ function App() {
 
   const stop = () => {
     setVoiceFallback(false)
+    setNarratorNotice(false)
     clearWait()
     runRef.current = { pages: 0, started: 0 }
     readingPageRef.current = 0
@@ -868,6 +879,7 @@ function App() {
                 <div className="preview-scroll" ref={previewScrollRef} tabIndex={0} aria-label="PDF preview and selectable text">
                   {textWarning && <p className="warning-copy">{textWarning}</p>}
                   {documentState.error && <p className="error-copy" role="alert">{documentState.error}</p>}
+                  {narratorNotice && <p className="warning-copy" data-narrator-notice role="status">{narratorNoticeCopy()}</p>}
                   <button type="button" className="secondary-button read-along-toggle" aria-pressed={readAlong} onClick={() => setReadAlong(value => !value)}>Read-along text</button>
                   {readAlong ? <ReadAlong text={currentText} page={currentPage} position={position} following={following} status={playback.status} />
                     : pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={renderZoom} onNavigate={navigate} /> : <p>Loading preview...</p>}

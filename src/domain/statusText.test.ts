@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readingStatusText, localVoiceCopy, type ReadingStatusInput } from './statusText'
+import { readingStatusText, localVoiceCopy, narratorNoticeCopy, type ReadingStatusInput } from './statusText'
 
 const base: ReadingStatusInput = {
   extraction: 'complete',
@@ -82,5 +82,10 @@ describe('local narrator panel copy', () => {
     expect(localVoiceCopy('error')).toBe('Could not use this voice. Try again or choose Browser voice.')
     expect(localVoiceCopy('off')).toBe('Download the voice to begin')
     for (const status of ['off','preparing','ready','buffering','playing','paused','error'] as const) expect(localVoiceCopy(status)).not.toMatch(/Local|buffer|engine|chunk|Jasper/i)
+  })
+
+  it('tells the reader a passage continued without naming the engine', () => {
+    expect(narratorNoticeCopy()).toBe('Some of this passage could not be spoken. Reading continued. Switch to Browser voice if you need it read.')
+    expect(narratorNoticeCopy()).not.toMatch(/Local|buffer|engine|chunk|Jasper|Misaki|token|unsupported/i)
   })
 })

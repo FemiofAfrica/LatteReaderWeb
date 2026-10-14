@@ -50,3 +50,13 @@ export function localVoiceCopy(localStatus: LocalVoiceStatus): string {
   if (localStatus === 'preparing') return 'Preparing voice… This may take a minute.'
   return ({off: 'Download the voice to begin', buffering: 'Preparing reading…', playing: 'Reading', paused: 'Paused'} as const)[localStatus]
 }
+
+/**
+ * The plain line for the rare part of a passage this voice cannot say. Reading
+ * carries on without it, so the reader is told once, in words they can act on,
+ * rather than watching a run stop for a reason only the logs explain. No counters
+ * and no engine detail: how many characters, and why, stays in diagnostics.
+ */
+export function narratorNoticeCopy(): string {
+  return 'Some of this passage could not be spoken. Reading continued. Switch to Browser voice if you need it read.'
+}

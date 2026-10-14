@@ -1,8 +1,17 @@
 import type { SpeechEngine, SpeechRequest } from './SpeechEngine'
 import { localParts, type LocalPart } from './localPlan'
+import { recordEvent } from '../diagnostics/diagnostics'
 
 type AudioPart = { part: LocalPart; buffer: AudioBuffer }
 export type LocalStatus = 'off' | 'preparing' | 'ready' | 'buffering' | 'playing' | 'paused' | 'error'
+
+/**
+ * How many parts in a row may fail before the run stops. One unreadable part is
+ * normal and must never end a read; a voice that cannot say twenty consecutive
+ * parts is broken, and reporting that as a finished document would be worse than
+ * saying the voice failed.
+ */
+const MAX_CONSECUTIVE_SKIPS = 20
 
 
 /** One built worker for normal and private previews. The private marker never
@@ -37,7 +46,9 @@ export class LocalNarratorEngine implements SpeechEngine {
   private prepared = false
   private pumping = false
   status: LocalStatus = 'off'
-  readonly stats = { generated: 0, skipped: 0, underruns: 0, maxBufferedSeconds: 0, resumedOffset: 0 }
+  readonly stats = { generated: 0, skipped: 0, dropped: 0, underruns: 0, maxBufferedSeconds: 0, resumedOffset: 0 }
+  private consecutiveSkips = 0
+  private runNotice = { parts: 0, dropped: 0 }
   constructor(private changed: (status: LocalStatus) => void) {}
   get available() { return this.prepared }
   onEnd(callback: () => void) { this.ended = callback }
@@ -120,11 +131,31 @@ export class LocalNarratorEngine implements SpeechEngine {
     this.parts.unshift(make(part.start,part.start+mid),make(part.start+mid,part.end))
     return true
   }
-  /** A refused part is skipped, never fatal: report its position so the reader's place advances. */
-  private skip(part: LocalPart) {
-    this.stats.skipped++
-    window.dispatchEvent(new CustomEvent('latte-local-skipped', { detail: { chunk: part.chunk, start: part.start, end: part.end } }))
-    if (!this.current && !this.queue.length) { this.request?.onPosition?.(part.chunk, Math.max(part.start, part.end-1), 'utterance'); this.request?.onPage?.(part.pageEnd) }
+  /**
+   * A refused or failed part is skipped, never fatal: the run keeps its position and
+   * goes on with the next part, which is a product rule. Only a voice that cannot say
+   * anything at all ends a run, and MAX_CONSECUTIVE_SKIPS detects that so a dead
+   * engine cannot skim a whole document in silence and report it as finished.
+   */
+  private skip(part: LocalPart, reason: string, dropped = 0) {
+    this.stats.skipped++; this.stats.dropped += dropped; this.consecutiveSkips++
+    this.notice(reason, dropped)
+    if (this.consecutiveSkips >= MAX_CONSECUTIVE_SKIPS) { this.fail(); return }
+    // Report the span as read, so the reader's place and the followed page advance past
+    // it exactly as if it had been spoken: the reader must never lose a position, and a
+    // later Play must not start again on the text this voice cannot say.
+    this.request?.onPosition?.(part.chunk, part.start, 'audio-chunk', part.end)
+    this.request?.onPosition?.(part.chunk, Math.max(part.start, part.end - 1), 'utterance')
+    this.request?.onPage?.(part.pageEnd)
+  }
+  /** Content-free: a fixed reason code and a count, never any text from the document. */
+  private notice(reason: string, dropped: number) {
+    this.runNotice.parts += 1; this.runNotice.dropped += dropped
+    window.dispatchEvent(new CustomEvent('latte-local-notice', { detail: { reason, dropped, parts: this.runNotice.parts } }))
+  }
+  private noticeRun() {
+    if (this.runNotice.parts) recordEvent('speech.contained', { count: this.runNotice.parts })
+    this.runNotice = { parts: 0, dropped: 0 }
   }
   private async pump(run: number) {
     if (!this.request || this.pumping || this.busy || run !== this.run) return
@@ -141,16 +172,23 @@ export class LocalNarratorEngine implements SpeechEngine {
           const code = (e as Error).message
           if (code === 'CANCELLED') return
           // TOKEN_LIMIT / UNSUPPORTED_TEXT / INFERENCE_FAILED on one part: halve it, else skip it.
-          if (code === 'TOKEN_LIMIT' || code === 'UNSUPPORTED_TEXT' || code === 'INFERENCE_FAILED' || code === 'INVALID_PCM') { if (!this.split(part)) this.skip(part); continue }
+          if (code === 'TOKEN_LIMIT' || code === 'UNSUPPORTED_TEXT' || code === 'INFERENCE_FAILED' || code === 'INVALID_PCM') { if (!this.split(part)) this.skip(part, code); continue }
           throw e
         } finally { this.busy = false }
         if (run !== this.run) return
         const pcm = new Float32Array(result.pcm as ArrayBuffer)
-        if (!pcm.length || !pcm.every(Number.isFinite)) { if (!this.split(part)) this.skip(part); continue }
-        if (pcm.length/24000 > 15) { if (!this.split(part)) this.skip(part); continue }
+        if (!pcm.length || !pcm.every(Number.isFinite)) { if (!this.split(part)) this.skip(part, 'INVALID_PCM'); continue }
+        if (pcm.length/24000 > 15) { if (!this.split(part)) this.skip(part, 'TOKEN_LIMIT'); continue }
         const buffer = this.context!.createBuffer(1,pcm.length,24000)
         buffer.copyToChannel(pcm,0)
         this.queue.push({part,buffer}); this.stats.generated++
+        // A contained part was still read. Silent punctuation (brackets, quotes) needs no
+        // notice; a dropped unit or a spoken-form/spelling substitution does.
+        const metrics = (result.metrics ?? {}) as { dropped?: number; readByOtherMeans?: number }
+        if (Number(metrics.dropped) > 0 || Number(metrics.readByOtherMeans) > 0) {
+          this.notice('contained', Number(metrics.dropped) || 0)
+        }
+        this.consecutiveSkips = 0
         this.stats.maxBufferedSeconds = Math.max(this.stats.maxBufferedSeconds,this.seconds())
         window.dispatchEvent(new CustomEvent('latte-local-metric',{detail:result.metrics}))
         this.playNext(run)
@@ -168,7 +206,7 @@ export class LocalNarratorEngine implements SpeechEngine {
     if (!this.request || run !== this.run || this.paused || this.source) return
     if (!this.current) { this.current = this.queue.shift() ?? null; this.offset = 0 }
     if (!this.current) {
-      if (!this.parts.length && !this.busy && !this.pumping) { this.request = null; this.state('ready'); this.ended() }
+      if (!this.parts.length && !this.busy && !this.pumping) { this.request = null; this.noticeRun(); this.state('ready'); this.ended() }
       else this.state('buffering')
       return
     }
@@ -206,6 +244,7 @@ export class LocalNarratorEngine implements SpeechEngine {
   }
   stop() {
     this.run++; this.paused=false; this.request=null; this.parts=[]; this.queue=[]; this.current=null; this.offset=0
+    this.consecutiveSkips = 0; this.noticeRun()
     if (this.source) { this.source.onended=null; this.source.stop(); this.source.disconnect(); this.source=null }
     if (!this.prepared && this.worker && this.status === 'preparing') {
       this.worker.terminate(); this.worker = null

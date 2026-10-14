@@ -4,43 +4,13 @@
  * No document content or audio is sent over the network.
  */
 import { fetchPartsVerified, fetchVerified, sha256Hex } from '../speech/local/assetIntegrity'
+import { containedPrepare, type PreparedText } from '../speech/local/prepareContained'
 import symbols from '../speech/local/kittenSymbols.json'
 import pins from '../speech/local/narratorPins.json'
 import { NARRATOR_BASE_PATH } from '../speech/local/narratorAssets'
 type Request = { op: 'init' | 'generate'; id: number; text: string; speed?: number }
-type Prepared = { ids: number[]; styleRow: number; ok: boolean; tokenLimitExceeded: boolean; sourceUnits: number; coveredUnits: number }
-type Frontend = { prepare: (text: string, lex: unknown, symbols: unknown) => Prepared }
+type Frontend = { prepare: (text: string, lex: unknown, symbols: unknown) => PreparedText }
 type Learned = { calls: unknown[] }
-const LETTERS: Record<string,string> = {'%':'percent','&':'and','@':'at','#':'number','+':'plus','=':'equals','/':'slash','*':'star'}
-/** Never refuse a whole passage: retry word by word, then spell the word, then skip it. */
-export function prepareResilient(text: string, prep: (t: string) => Prepared): Prepared & { skippedWords: number } {
- let first: Prepared | null = null
- try { first = prep(text); if (first.ok || first.tokenLimitExceeded) return { ...first, skippedWords: 0 } } catch { /* fall through */ }
- const ok = (t: string) => { try { const p = prep(t); return p.ok ? p : null } catch { return null } }
- const spoken: string[] = []; let skippedWords = 0
- for (const raw of text.split(/\s+/).filter(Boolean)) {
-  if (ok(raw)) { spoken.push(raw); continue }
-  // Split symbols/digits from letters ("12%" -> "12 percent", "3.5.1" -> "3 point 5 point 1").
-  const parts = raw.match(/[A-Za-z\u00C0-\u024F']+|\d+|[^\sA-Za-z\d]/g) ?? []
-  const pieces: string[] = []
-  for (const piece of parts) {
-   if (ok(piece)) { pieces.push(piece); continue }
-   const word = LETTERS[piece] ?? (piece === '.' ? 'point' : null)
-   if (word && ok(word)) { pieces.push(word); continue }
-   const spelled = [...piece.normalize('NFD').replace(/\p{M}/gu, '')].filter(c => /[A-Za-z0-9]/.test(c)).map(c => c.toUpperCase()).join(' ')
-   if (spelled && ok(spelled)) pieces.push(spelled)
-  }
-  if (pieces.length) spoken.push(pieces.join(' ')); else skippedWords++
- }
- const joined = spoken.join(' ')
- const result = joined ? ok(joined) : null
- if (result) return { ...result, skippedWords }
- // Last resort: concatenate per-word token ids so one odd interaction cannot drop the passage.
- const ids: number[] = [0]
- for (const w of spoken) { const p = ok(w); if (p) ids.push(...p.ids.slice(1, -2), 16) ; else skippedWords++ }
- ids.push(10, 0)
- return { ids, styleRow: Math.min(ids.length, 399), ok: ids.length > 3, tokenLimitExceeded: ids.length > 500, sourceUnits: first?.sourceUnits ?? 0, coveredUnits: 0, skippedWords }
-}
 type Tensor = { data: Float32Array; dims: number[]; dispose?: () => void }
 type Ort = {
  env: { wasm: { numThreads: number; proxy: boolean; wasmPaths?: unknown; wasmBinary?: Uint8Array | ArrayBuffer } }
@@ -88,7 +58,7 @@ async function generate(request: Request) {
  if (!session || !voice || !ort || !frontend || !learned || typeof request.text !== 'string') throw Error('INVALID_REQUEST')
  const started = performance.now()
  learned.calls.length = 0
- const prepared = prepareResilient(request.text, t => frontend!.prepare(t, lex, symbols))
+ const prepared = containedPrepare(request.text, t => frontend!.prepare(t, lex, symbols))
  const learnedCalls = learned.calls.length; learned.calls.length = 0
  if (prepared.tokenLimitExceeded) throw Error('TOKEN_LIMIT')
  if (!prepared.ok) throw Error('UNSUPPORTED_TEXT')
@@ -102,7 +72,7 @@ async function generate(request: Request) {
  const waveform=out.waveform, pcm=Float32Array.from(waveform.data)
  if(waveform.dims.length!==1||!pcm.length||!pcm.every(Number.isFinite))throw Error('INVALID_PCM')
  const generateMs=performance.now()-started
- self.postMessage({id:request.id,ok:true,pcm:pcm.buffer,metrics:{generateMs,audioSeconds:pcm.length/24000,rtf:generateMs/(pcm.length/24),learnedCalls,sourceUnits:prepared.sourceUnits,coveredUnits:prepared.coveredUnits,skippedWords:prepared.skippedWords,tokens:ids.length,styleRow,trimSamples:0,verifiedGraphSha256:verify?.graphSha256}},[pcm.buffer])
+ self.postMessage({id:request.id,ok:true,pcm:pcm.buffer,metrics:{generateMs,audioSeconds:pcm.length/24000,rtf:generateMs/(pcm.length/24),learnedCalls,sourceUnits:prepared.sourceUnits,coveredUnits:prepared.coveredUnits,contained:prepared.contained,dropped:prepared.dropped,readByOtherMeans:prepared.readByOtherMeans,omitted:prepared.omissions.slice(0,8).map(omission=>({kind:omission.kind,raw:omission.raw})),tokens:ids.length,styleRow,trimSamples:0,verifiedGraphSha256:verify?.graphSha256}},[pcm.buffer])
  } finally {for(const tensor of Object.values(out))tensor.dispose?.()}
 }
 self.onmessage=async(event:MessageEvent<Request>)=>{
