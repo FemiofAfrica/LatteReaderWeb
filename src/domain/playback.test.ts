@@ -39,6 +39,11 @@ describe('playbackReducer', () => {
     })
   })
 
+  it('updates an explicitly sought page without starting stopped or paused speech', () => {
+    expect(playbackReducer(initialPlaybackState, { type: 'SEEK', page: 3 })).toMatchObject({ status: 'ready', page: 3 })
+    const paused = playbackReducer(playing(1), { type: 'PAUSE' })
+    expect(playbackReducer(paused, { type: 'SEEK', page: 3 })).toMatchObject({ status: 'paused', page: 3 })
+  })
   it('defaults to continuous reading', () => {
     expect(initialPlaybackState.scope).toBe('document')
   })

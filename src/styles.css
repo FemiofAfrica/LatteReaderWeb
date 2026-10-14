@@ -186,9 +186,6 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .transport-buttons { display: flex; align-items: center; gap: 8px; }
 .transport-buttons .play-button { width: 58px; height: 58px; border-radius: 14px; background: linear-gradient(#dfba78, var(--caramel)); color: var(--espresso); box-shadow: 0 5px 12px rgba(96,63,30,.5); }
 .transport-buttons .play-button svg { width: 26px; height: 26px; }
-.waveform { height: 42px; display: flex; align-items: center; gap: 3px; overflow: hidden; padding: 5px 8px; border-radius: 8px; background: rgba(0,0,0,.46); }
-.waveform i { min-width: 3px; flex: 1; border-radius: 3px; background: var(--crema); }
-.waveform[data-playing="true"] i:nth-child(-n+10) { background: var(--butter); }
 .playback-readout { min-width: 0; display: grid; gap: 3px; text-align: center; }
 .playback-readout strong { color: var(--butter); font: 500 12px DM Mono, monospace; text-transform: uppercase; }
 .playback-readout span { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
@@ -451,20 +448,36 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   .preview-header .bezel-dial { grid-column: 2; grid-row: 3; }
 }
 
-/* Side arrows sit outside the page, never over readable PDF content. */
-.page-turn-viewer { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; flex: 1; min-height: 0; background: #221a13; }
-.page-turn-viewer > .preview-scroll { grid-column: 2; grid-row: 1; }
-.viewer-page-arrow { align-self: center; width: 40px; height: 44px; padding: 8px; border: 1px solid var(--crema); border-radius: 10px; background: var(--bean); color: var(--foam); }
-.viewer-page-arrow svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.viewer-previous { grid-column: 1; grid-row: 1; justify-self: center; }
-.viewer-next { grid-column: 3; grid-row: 1; justify-self: center; }
+/* One permanent pager in the header. Desktop has quiet canvas-edge affordances;
+   mobile has swipes, not transparent buttons intercepting document touches. */
+.page-turn-viewer { display: flex; flex: 1; min-height: 0; min-width: 0; background: #221a13; }
+.canvas-surface { position: relative; width: max-content; }
+.canvas-surface canvas { display: block; }
+.canvas-edge-arrow { position: absolute; top: calc(50% - 24px); width: 24px; height: 48px; padding: 2px; border: 0; border-radius: 4px; color: #4a382a; background: transparent; opacity: 0; }
+.canvas-edge-previous { left: 0; }
+.canvas-edge-next { right: 0; }
+.canvas-edge-arrow svg { width: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 2px white); }
+.canvas-surface:hover .canvas-edge-arrow:not(:disabled), .canvas-edge-arrow:focus-visible { opacity: .75; }
+.canvas-edge-arrow:focus-visible { outline: 2px solid var(--caramel); outline-offset: -2px; }
+@media (max-width: 780px), (max-height: 600px), (hover: none), (pointer: coarse) {
+  .canvas-edge-arrow { display: none; }
+}
+
+.reading-progress { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.reading-progress > button { width: 44px; height: 44px; flex: 0 0 44px; border: 1px solid var(--crema); border-radius: 8px; background: var(--bean); color: var(--foam); font-size: 26px; }
+.reading-progress label { flex: 1; min-width: 0; color: var(--foam); font-size: 11px; }
+.reading-progress input { display: block; width: 100%; height: 30px; margin: 0; accent-color: var(--butter); }
+.read-along-toggle { display: block; margin-bottom: 12px; }
+.read-along { max-width: 800px; margin-inline: auto; }
+.transcript-frame { padding: 12px; border: 1px solid var(--crema); border-radius: 10px; }
+.read-along .read-along-text { max-height: 50dvh; overflow: auto; padding: 0 4px; }
+.read-along-text mark { background: var(--butter); color: var(--espresso); }
+.read-along-text mark[data-state="paused"] { background: var(--crema); color: var(--foam); }
 @media (max-width: 780px), (max-height: 600px) {
-  .page-turn-viewer { grid-template-columns: 44px minmax(0,1fr) 44px; padding-top: 6px; }
-  .page-turn-viewer > .preview-scroll { grid-column: 1 / -1; grid-row: 2; }
-  .viewer-page-arrow { width: 44px; border-radius: 8px; }
-  .viewer-previous { margin-inline-start: 12px; justify-self: start; }
-  .viewer-next { margin-inline-end: 12px; justify-self: end; }
-  .page-turn-viewer::before { content: 'Turn page'; grid-column: 2; grid-row: 1; align-self: center; justify-self: center; color: var(--muted); font-size: 12px; }
+  .mobile-bar .reading-progress { flex: 1 0 100%; }
+}
+@media (min-width: 781px) and (min-height: 601px) and (max-width: 1200px) {
+  .transport .playback-readout { display: none; }
 }
 
 .reading-position { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--foam); font-size: 12px; }
@@ -532,4 +545,13 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   .page-jump { display: flex; gap: 8px; }
   .rotary-caption { grid-template-columns: auto auto; align-items: center; gap: 6px; }
   .rotary-dial { width: 48px; height: 48px; flex-basis: 48px; }
+}
+@media (min-width: 781px) and (min-height: 601px) and (max-width: 1200px) {
+  .transport { grid-template-columns: auto minmax(120px,1fr) auto; }
+}
+@media (min-width: 480px) and (max-height: 600px) {
+  .mobile-bar .reading-progress { flex: 1 1 160px; gap: 4px; }
+  .mobile-tabs { flex: 0 0 auto; }
+  .mobile-tabs button { min-width: 44px; font-size: 8px; }
+  .mobile-page { display: none; }
 }

@@ -28,12 +28,12 @@ const actualPage = p => p.locator('.preview-header input[type=number]').first().
 const speechCounts = p => p.evaluate(() => ({ cancels: __speech.cancels, starts: __speech.starts }))
 for (const width of [320,390,504,768,1024,1440]) {
   const page = await open({ width, height: width === 768 ? 1024 : 900 })
-  assert.equal(await page.getByRole('slider').count(), 2)
+  assert.equal(await page.getByRole('slider').count(), 3)
   const geometry = await page.evaluate(() => {
     const rect = el => { const r = el.getBoundingClientRect(); return { x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom } }
     return { rootWidth:document.documentElement.scrollWidth, viewport:innerWidth, header:rect(document.querySelector('.preview-header')), transport:document.querySelector('.transport') && rect(document.querySelector('.transport')), knobs:[...document.querySelectorAll('.rotary-dial')].map(rect), values:[...document.querySelectorAll('.rotary-value')].map(rect), canvas:rect(document.querySelector('canvas')), scroller:rect(document.querySelector('.preview-scroll')), zoom:document.querySelector('.preview-zoom output').textContent,
       colors:[...document.querySelectorAll('.rotary-caption label,.rotary-value output')].map(el=>({color:getComputedStyle(el).color,fontSize:getComputedStyle(el).fontSize,fontWeight:getComputedStyle(el).fontWeight})),
-      controls:[...document.querySelectorAll('.rotary-control input,.viewer-page-arrow')].filter(el=>!el.disabled).map(el=>{const r=rect(el); return {...r, hit:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}}) }
+      controls:[...document.querySelectorAll('.rotary-control input')].filter(el=>!el.disabled).map(el=>{const r=rect(el); return {...r, hit:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}}) }
   })
   assert.equal(geometry.rootWidth, width)
   assert(geometry.controls.every(c => c.hit && c.width >= 40 && c.height >= 40), JSON.stringify({width,geometry}))
@@ -54,7 +54,7 @@ for (const width of [320,390,504,768,1024,1440]) {
 for (const viewport of [{width:320,height:900},{width:512,height:384}]) {
   const active = await open(viewport)
   await active.getByRole('button',{name:'Start reading',exact:true}).click()
-  await active.getByRole('button',{name:'Next PDF page',exact:true}).click()
+  await active.getByRole('button',{name:'Next page',exact:true}).click()
   const bands = await active.evaluate(()=>({headerBottom:document.querySelector('.preview-header').getBoundingClientRect().bottom,barTop:document.querySelector('.mobile-bar').getBoundingClientRect().top,children:[...document.querySelector('.preview-header').children].map(el=>({c:el.className,y:el.getBoundingClientRect().y,h:el.getBoundingClientRect().height}))}))
   assert(bands.barTop - bands.headerBottom >= 44, JSON.stringify({viewport,bands}))
   await active.waitForTimeout(300)
@@ -92,10 +92,10 @@ assert.equal(await p.locator('.preview-zoom output').innerText(),`${await zoom.i
 await p.getByRole('button',{name:'Start reading',exact:true}).click()
 assert.equal(await p.evaluate(()=>__speech.rates[0]),1.25)
 const started=await speechCounts(p)
-await p.getByRole('button',{name:'Next PDF page',exact:true}).click()
+await p.getByRole('button',{name:'Next page',exact:true}).click()
 assert.equal(await actualPage(p),'2')
 assert.deepEqual(await speechCounts(p),started)
-await p.getByRole('button',{name:'Previous PDF page',exact:true}).click()
+await p.getByRole('button',{name:'Previous page',exact:true}).click()
 await p.evaluate(()=> { const u=__speech.active; u.onboundary({charIndex:u.text.indexOf('SECOND PAGE')}) })
 assert.equal(await actualPage(p),'1','browsing must not snap back to speech')
 await p.getByText('Playing page 2',{exact:true}).waitFor()
@@ -106,7 +106,7 @@ const stored=await p.evaluate(()=>new Promise(resolve=>{const r=indexedDB.open('
 assert.equal(stored.currentPage,1); assert.equal(stored.readingPage,2)
 await p.getByRole('button',{name:'Follow reading',exact:true}).click()
 assert.equal(await actualPage(p),'2'); assert.deepEqual(await speechCounts(p),started)
-await p.getByRole('button',{name:'Previous PDF page',exact:true}).click()
+await p.getByRole('button',{name:'Previous page',exact:true}).click()
 await p.getByRole('button',{name:'Read from this page',exact:true}).click()
 assert.equal((await speechCounts(p)).starts,started.starts+1)
 const beforeHidden=await speechCounts(p)
@@ -137,9 +137,9 @@ const swipe=async(dx,dy=0,cancel=false,x=240)=>{
   await cdp.send('Input.dispatchTouchEvent',{type:cancel?'touchCancel':'touchEnd',touchPoints:[]})
   await m.waitForTimeout(150)
 }
-assert(await m.getByRole('button',{name:'Previous PDF page',exact:true}).isDisabled())
+assert(await m.getByRole('button',{name:'Previous page',exact:true}).isDisabled())
 await swipe(-100);assert.equal(await actualPage(m),'2')
-assert(await m.getByRole('button',{name:'Next PDF page',exact:true}).isDisabled())
+assert(await m.getByRole('button',{name:'Next page',exact:true}).isDisabled())
 await swipe(100,0,false,130);assert.equal(await actualPage(m),'1')
 await swipe(-100,0,true);assert.equal(await actualPage(m),'1')
 await swipe(-3,-90);assert.equal(await actualPage(m),'1')

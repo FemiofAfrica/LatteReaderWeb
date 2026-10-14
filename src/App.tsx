@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { PdfCanvas } from './components/PdfCanvas'
 import { analyzeDocument, type DocumentVoicePlan } from './domain/analysis'
@@ -19,7 +19,10 @@ import {
   type PlaybackState,
   type ReadScope,
 } from './domain/playback'
-import { planSpeechChunks } from './domain/speechPlan'
+import { planSpeechChunks, type SpeechChunk } from './domain/speechPlan'
+import { readingTimeline, seekChunks, sentencePosition, sentenceSkip, type ReadingPosition } from './domain/readingPosition'
+import { ReadAlong } from './components/ReadAlong'
+import { ReadingProgress } from './components/ReadingProgress'
 import { BrowserSpeechEngine } from './speech/SpeechEngine'
 import { recordEvent } from './diagnostics/diagnostics'
 import { shouldRecordProgress } from './diagnostics/progress'
@@ -104,6 +107,13 @@ function App() {
   const [documentState, setDocumentState] = useState<DocumentState | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [spokenPage, setSpokenPage] = useState(0)
+  const [readAlong, setReadAlong] = useState(false)
+  const [position, setPosition] = useState<ReadingPosition | null>(null)
+  const [readingOffset, setReadingOffset] = useState(0)
+  const [sessionChunks, setSessionChunks] = useState<SpeechChunk[] | null>(null)
+  const sessionRef = useRef<SpeechChunk[] | null>(null)
+  const sessionScopeRef = useRef<ReadScope>('document')
+  const pendingSeekRef = useRef<(() => void) | null>(null)
   const [following, setFollowing] = useState(true)
   const followingRef = useRef(true)
   // `zoom` is the reader's stored zoom setting. On mobile the preview opens at a fit-to-width
@@ -146,6 +156,8 @@ function App() {
     if (pages > 1) recordEvent('playback.complete', { count: pages, durationMs: performance.now() - runRef.current.started })
     runRef.current = { pages: 0, started: 0 }
     readingPageRef.current = 0
+    setPosition(null)
+    if (sessionRef.current) setReadingOffset(readingTimeline(sessionRef.current).text.length)
     dispatchPlayback({ type: 'END' })
   }
 
@@ -239,6 +251,7 @@ function App() {
     extractionWorkerRef.current?.terminate()
     if (pdf) await pdf.cleanup()
 
+    setPosition(null); setReadingOffset(0); setSessionChunks(null); sessionRef.current = null; pendingSeekRef.current = null
     setPdf(document)
     setUploadError('')
     setUploadFailure(null)
@@ -436,10 +449,64 @@ function App() {
     <RotaryControl label="Zoom" name="Preview zoom" className="preview-zoom" value={renderZoom} min={MIN_PREVIEW_ZOOM} max={MAX_PREVIEW_ZOOM} step={1} format={value => `${value}%`} onChange={value => { setManualZoom(true); setZoom(value) }} />
   </div>
 
+  const availableChunks = useMemo(() => sessionChunks ?? (documentState?.extraction === 'complete'
+    ? planSpeechChunks(documentState.pages, readScope === 'page' ? currentPage : 1, readScope, voicePlan) : []),
+    [sessionChunks, documentState?.pages, documentState?.extraction, readScope, currentPage, voicePlan])
+  const timeline = useMemo(() => readingTimeline(availableChunks), [availableChunks])
+  const launchReading = (allChunks: SpeechChunk[], offset: number, scope: ReadScope) => {
+    const chunks = seekChunks(allChunks, offset)
+    const remaining = readingTimeline(chunks)
+    const full = readingTimeline(allChunks)
+    // seekChunks can discard a separator; derive the actual surviving chunk's offset.
+    const origin = full.text.length - remaining.text.length
+    const page = chunks[0]?.spans[0]?.pageNumber ?? spokenPage
+    if (!chunks.length) { completeRun(); return }
+    runRef.current = { pages: new Set(chunks.flatMap(c => c.spans.map(s => s.pageNumber))).size, started: performance.now() }
+    readingPageRef.current = page
+    dispatchPlayback({ type: 'PLAY', scope, page })
+    speechRef.current.speak({ text: '', chunks, rate: speedRef.current,
+      onPosition: (chunk, char, evidence) => {
+        const offset = origin + remaining.starts[chunk] + char
+        setReadingOffset(offset)
+        setPosition(sentencePosition(full, offset, evidence))
+      },
+      onPage: page => {
+        readingPageRef.current = page; setSpokenPage(page)
+        if (followingRef.current) setCurrentPage(page)
+        dispatchPlayback({ type: 'ADVANCE', page, totalPages: documentRef.current?.pageCount ?? page })
+      },
+      onError: () => { setPosition(null); dispatchPlayback({ type: 'FAIL', message: 'Voice stopped. Play to retry from this page.' }) },
+    })
+  }
+  const seekReading = (requested: number) => {
+    if (!availableChunks.length || playback.scope === 'selection' && playback.status !== 'ready') return
+    const offset = Math.min(timeline.text.length, Math.max(0, requested))
+    clearWait(); speechRef.current.stop(); setPosition(null)
+    sessionRef.current = availableChunks; setSessionChunks(availableChunks); setReadingOffset(offset)
+    followingRef.current = true; setFollowing(true)
+    const source = timeline.source.slice(offset).find(Boolean) ?? timeline.source.filter(Boolean).at(-1)
+    if (source) {
+      readingPageRef.current = source.pageNumber
+      setSpokenPage(source.pageNumber); setCurrentPage(source.pageNumber)
+      dispatchPlayback({ type: 'SEEK', page: source.pageNumber })
+    }
+    if (offset === timeline.text.length) { pendingSeekRef.current = null; completeRun(); return }
+    const scope = sessionChunks ? sessionScopeRef.current : readScope
+    sessionScopeRef.current = scope
+    const launch = () => launchReading(availableChunks, offset, scope)
+    if (playback.status === 'playing') { pendingSeekRef.current = null; launch() }
+    else { pendingSeekRef.current = launch } // A stopped/paused seek never starts audio.
+  }
+  const progressControl = <ReadingProgress value={readingOffset} max={timeline.text.length}
+    disabled={!timeline.text.length || documentState?.extraction !== 'complete' || playback.scope === 'selection' && playback.status !== 'ready'}
+    onSeek={seekReading} onSkip={direction => seekReading(sentenceSkip(timeline, readingOffset, direction))} />
+
   const read = (fromVisiblePage = false) => {
     if (!documentState || documentState.scanned || !speechRef.current.available) return
     if (!fromVisiblePage && playback.status === 'paused') {
-      speechRef.current.resume()
+      const pending = pendingSeekRef.current
+      pendingSeekRef.current = null
+      if (pending) pending(); else speechRef.current.resume()
       dispatchPlayback({ type: 'RESUME' })
       return
     }
@@ -449,6 +516,10 @@ function App() {
       return
     }
 
+    if (!fromVisiblePage && pendingSeekRef.current) {
+      const pending = pendingSeekRef.current; pendingSeekRef.current = null; pending(); return
+    }
+    setPosition(null); pendingSeekRef.current = null
     clearWait()
     runRef.current = { pages: 0, started: performance.now() }
 
@@ -459,6 +530,7 @@ function App() {
     // Selection reading keeps its own path and reads only the selection.
     const selected = fromVisiblePage ? '' : selectionText()
     if (selected) {
+      setSessionChunks(null); sessionRef.current = null; setReadingOffset(0)
       runRef.current.pages = 1
       readingPageRef.current = currentPage
       dispatchPlayback({ type: 'PLAY', scope: 'selection', page: currentPage })
@@ -473,18 +545,8 @@ function App() {
       if (!document) return
       const chunks = planSpeechChunks(document.pages, fromPage, scope, voicePlanRef.current)
       if (!chunks.length) { completeRun(); return }
-      readingPageRef.current = fromPage
-      runRef.current.pages = new Set(chunks.flatMap(chunk => chunk.spans.map(span => span.pageNumber))).size
-      dispatchPlayback({ type: 'PLAY', scope, page: fromPage })
-      speechRef.current.speak({ text: '', chunks, rate: speedRef.current,
-        onPage: page => {
-          readingPageRef.current = page
-          setSpokenPage(page)
-          if (followingRef.current) setCurrentPage(page)
-          dispatchPlayback({ type: 'ADVANCE', page, totalPages: document.pageCount })
-        },
-        onError: () => dispatchPlayback({ type: 'FAIL', message: 'Voice stopped. Play to retry from this page.' }),
-      })
+      sessionRef.current = chunks; sessionScopeRef.current = scope; setSessionChunks(chunks); setReadingOffset(0)
+      launchReading(chunks, 0, scope)
     }
     // An unavailable page is not a sentence end. Wait before continuous reading rather
     // than truncating the last available sentence; page and selection remain immediate.
@@ -509,11 +571,13 @@ function App() {
     runRef.current = { pages: 0, started: 0 }
     readingPageRef.current = 0
     speechRef.current.stop()
+    setPosition(null); pendingSeekRef.current = null
     dispatchPlayback({ type: 'STOP' })
   }
 
   const navigate = (page: number) => {
     if (playbackRef.current.status !== 'ready') { followingRef.current = false; setFollowing(false) }
+    if (playbackRef.current.status === 'ready') { setSessionChunks(null); sessionRef.current = null; setReadingOffset(0); pendingSeekRef.current = null; setPosition(null) }
     setCurrentPage(page)
     setActivePanel('read')
   }
@@ -533,6 +597,7 @@ function App() {
       setVoicePlan(null)
       setCurrentPage(1)
       setSpokenPage(0)
+      setPosition(null); setSessionChunks(null); sessionRef.current = null; setReadingOffset(0); pendingSeekRef.current = null
       setZoom(100)
       setFitZoom(null)
       setManualZoom(false)
@@ -696,7 +761,9 @@ function App() {
                 </header>
                 <PageTurnViewer page={currentPage} pageCount={documentState.pageCount} allowSwipe={renderZoom <= 100 || (!manualZoom && fitZoom !== null)} onNavigate={navigate}>
                 <div className="preview-scroll" ref={previewScrollRef} tabIndex={0} aria-label="PDF preview and selectable text">
-                  {pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={renderZoom} /> : <p>Loading preview...</p>}
+                  <button type="button" className="secondary-button read-along-toggle" aria-pressed={readAlong} onClick={() => setReadAlong(value => !value)}>Read-along text</button>
+                  {readAlong ? <ReadAlong text={currentText} page={currentPage} position={position} following={following} status={playback.status} />
+                    : pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={renderZoom} onNavigate={navigate} /> : <p>Loading preview...</p>}
                   {documentState.unmapped > 0 && <p className="warning-copy" role="alert">Some letters could not be extracted from this PDF. Reading may omit them. Try a text-exported PDF; local OCR is not available yet.</p>}
                   <details className="page-text-disclosure">
                     <summary>Select text to read only that part</summary>
@@ -715,7 +782,7 @@ function App() {
                   <button aria-label="Stop reading" onClick={stop} disabled={playback.status === 'ready'}><Icon name="stop" /></button>
                   <button className="play-button" aria-label={playLabel} onClick={() => read()} disabled={!documentState.characterCount || documentState.scanned || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
                 </div>
-                <div className="waveform" data-playing={playback.status === 'playing'} aria-hidden="true">{Array.from({ length: 32 }, (_, index) => <i key={index} style={{ height: `${8 + ((index * 17) % 25)}px` }} />)}</div>
+                {progressControl}
                 <div className="playback-readout" aria-live="polite"><strong>{playback.status}</strong><span>{playback.message}</span></div>
                 {rotaryControls}
               </footer>
@@ -723,6 +790,7 @@ function App() {
 
             {isMobile && (
               <nav className="mobile-bar" ref={mobileBarRef} aria-label="Reader panels and playback">
+                {progressControl}
                 <div className="mobile-tabs" role="tablist" aria-label="Reader panels">
                   {MOBILE_PANELS.map((panel) => (
                     <button

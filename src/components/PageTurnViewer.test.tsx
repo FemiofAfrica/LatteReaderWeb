@@ -14,6 +14,10 @@ const gesture = (target: HTMLElement, from: [number, number], to: [number, numbe
   fireEvent[ cancel ? 'touchCancel' : 'touchEnd' ](target, { touches: [], changedTouches: [touch(...to)] })
 }
 describe('PageTurnViewer', () => {
+  it('adds no second permanent navigation strip', () => {
+    setup()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
   it('uses the existing navigation callback for left and right swipes', () => {
     const { canvas, navigate } = setup()
     gesture(canvas, [220, 300], [120, 300])

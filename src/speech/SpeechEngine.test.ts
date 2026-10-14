@@ -54,6 +54,27 @@ describe('source-aware browser transport', () => {
     expect(chunks.map(c => c.voiceIndex)).toEqual([1, 0])
     expect(chunks[1].spans[0].pageNumber).toBe(2)
   })
+  it('reports real boundaries, ignores invalid and stale positions after replacement and pause', () => {
+    const engine = new BrowserSpeechEngine(); const position = vi.fn(); const onPage = vi.fn()
+    engine.speak({ text: 'Same. Same.', rate: 1, onPosition: position, onPage })
+    const old = utterances[0]
+    expect(position.mock.calls).toEqual([[0, 0, 'utterance']])
+    old.onboundary?.({ charIndex: 6 } as SpeechSynthesisEvent)
+    expect(position.mock.calls.at(-1)).toEqual([0, 6, 'boundary'])
+    engine.pause()
+    const count = position.mock.calls.length, pages = onPage.mock.calls.length
+    old.onboundary?.({ charIndex: 8 } as SpeechSynthesisEvent)
+    expect(position).toHaveBeenCalledTimes(count); expect(onPage).toHaveBeenCalledTimes(pages)
+    engine.resume()
+    old.onboundary?.({ charIndex: NaN } as SpeechSynthesisEvent)
+    old.onboundary?.({ charIndex: 100 } as SpeechSynthesisEvent)
+    expect(position).toHaveBeenCalledTimes(count)
+    engine.speak({ text: 'New.', rate: 1, onPosition: position })
+    const replaced = position.mock.calls.length
+    old.onboundary?.({ charIndex: 0 } as SpeechSynthesisEvent); old.onend?.({} as SpeechSynthesisEvent)
+    expect(position).toHaveBeenCalledTimes(replaced)
+    expect(utterances).toHaveLength(2)
+  })
   it('selection preserves punctuation and ordinary f exactly', () => {
     const engine = new BrowserSpeechEngine()
     engine.speak({ text: '“Five fine friends.”', rate: 1 })

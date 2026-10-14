@@ -6,6 +6,7 @@ export interface SpeechRequest {
   text: string
   rate: number
   chunks?: SpeechChunk[]
+  onPosition?: (chunk: number, offset: number, evidence: 'boundary' | 'utterance') => void
   onPage?: (page: number) => void
   onError?: () => void
 }
@@ -30,7 +31,7 @@ export class BrowserSpeechEngine implements SpeechEngine {
   get available(): boolean { return typeof window !== 'undefined' && 'speechSynthesis' in window }
   onEnd(callback: () => void): void { this.ended = callback }
 
-  speak({ text, rate, chunks, onPage, onError }: SpeechRequest): void {
+  speak({ text, rate, chunks, onPage, onPosition, onError }: SpeechRequest): void {
     this.stop() // once per user run, never between normal chunks
     const started = performance.now()
     recordEvent('speech.start')
@@ -42,22 +43,25 @@ export class BrowserSpeechEngine implements SpeechEngine {
       if (generation !== this.generation) return
       if (this.paused) { this.pendingNext = next; return }
       if (index >= segments.length) { this.generation += 1; recordEvent('speech.end', { durationMs: performance.now() - started }); this.ended(); return }
+      const chunkIndex = index
       const segment = segments[index++]
       const utterance = new SpeechSynthesisUtterance(segment.text)
       utterance.rate = rate
       utterance.voice = voices[segment.voiceIndex % Math.max(voices.length, 1)] ?? null
       let completed = false
-      const follow = (offset: number) => {
+      const follow = (offset: number, evidence: 'boundary' | 'utterance') => {
         if (generation !== this.generation || completed) return
+        if (!Number.isFinite(offset) || offset < 0 || offset >= segment.text.length) return
+        if (!this.paused) onPosition?.(chunkIndex, offset, evidence)
         const span = segment.spans.find(s => offset >= s.start && offset < s.end)
-        if (span) onPage?.(span.pageNumber)
+        if (span && !this.paused) onPage?.(span.pageNumber)
       }
-      utterance.onstart = () => follow(0)
-      utterance.onboundary = event => follow(event.charIndex)
+      utterance.onstart = () => follow(0, 'utterance')
+      utterance.onboundary = event => follow(event.charIndex, 'boundary')
       utterance.onend = () => {
         if (generation !== this.generation || completed) return
         // Voices without boundary events follow at completion, never while merely buffered.
-        follow(Math.max(0, segment.text.length - 1)); completed = true; next()
+        follow(Math.max(0, segment.text.length - 1), 'utterance'); completed = true; next()
       }
       const fail = () => {
         if (generation !== this.generation || completed) return

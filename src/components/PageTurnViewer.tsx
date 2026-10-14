@@ -39,8 +39,6 @@ export function PageTurnViewer({ children, page, pageCount, allowSwipe, onNaviga
       if (next >= 1 && next <= pageCount) onNavigate(next)
     }}
     onTouchCancel={() => { gesture.current = null }}>
-    <button className="viewer-page-arrow viewer-previous" aria-label="Previous PDF page" disabled={page <= 1} onClick={() => onNavigate(page - 1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg></button>
     {children}
-    <button className="viewer-page-arrow viewer-next" aria-label="Next PDF page" disabled={page >= pageCount} onClick={() => onNavigate(page + 1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6" /></svg></button>
   </div>
 }

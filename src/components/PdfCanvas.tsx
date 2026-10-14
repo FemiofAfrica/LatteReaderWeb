@@ -7,9 +7,10 @@ interface PdfCanvasProps {
   pageNumber: number
   zoom: number
   onRendered?: () => void
+  onNavigate?: (page: number) => void
 }
 
-export function PdfCanvas({ document, pageNumber, zoom, onRendered }: PdfCanvasProps) {
+export function PdfCanvas({ document, pageNumber, zoom, onRendered, onNavigate }: PdfCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [error, setError] = useState('')
 
@@ -64,7 +65,13 @@ export function PdfCanvas({ document, pageNumber, zoom, onRendered }: PdfCanvasP
   return (
     <div className="page-stage" role="group" aria-label={`Rendered PDF page ${pageNumber}`}>
       {error && <p className="error-copy">{error}</p>}
-      <canvas ref={canvasRef} hidden={Boolean(error)} />
+      <div className="canvas-surface" hidden={Boolean(error)}>
+        <canvas ref={canvasRef} />
+        {onNavigate && <>
+          <button className="canvas-edge-arrow canvas-edge-previous" aria-label="Previous PDF page" disabled={pageNumber <= 1} onClick={() => onNavigate(pageNumber - 1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg></button>
+          <button className="canvas-edge-arrow canvas-edge-next" aria-label="Next PDF page" disabled={pageNumber >= document.numPages} onClick={() => onNavigate(pageNumber + 1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6" /></svg></button>
+        </>}
+      </div>
     </div>
   )
 }
