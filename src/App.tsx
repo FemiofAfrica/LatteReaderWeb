@@ -721,7 +721,7 @@ function App() {
 
         {!documentState ? (
           <section className="empty-state">
-            <span className="coffee-mark large" aria-hidden="true"><span /></span>
+            <BrandMark className="brand-mark brand-mark-large" />
             <div>
               <h1>{isRestoring ? 'Checking local reader storage' : 'Choose a PDF to begin'}</h1>
               <p>{isRestoring ? 'Looking for your current PDF in this browser.' : 'Open a text PDF, preview each page, and listen with a voice already available in your browser.'}</p>
