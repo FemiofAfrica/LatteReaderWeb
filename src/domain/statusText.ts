@@ -28,6 +28,13 @@ export function readingStatusText(input: ReadingStatusInput): string {
     if (input.localStatus === 'preparing') return 'Loading local voice'
     if (input.localStatus === 'buffering') return 'Buffering local voice'
     if (input.localStatus === 'error') return 'Voice unavailable'
+    // A loaded voice with nothing playing invites playback. "Stopped" reads like
+    // a fault, and switches to the local engine stop playback by design.
+    if (input.localStatus === 'ready'
+      && input.playback.status === 'ready'
+      && (input.playback.display === undefined || input.playback.display === 'Ready' || input.playback.display === 'Stopped')) {
+      return 'Press play to begin'
+    }
   } else if (!input.voiceAvailable) {
     return 'Voice unavailable'
   }

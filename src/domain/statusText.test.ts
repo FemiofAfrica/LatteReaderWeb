@@ -40,6 +40,23 @@ describe('reading status', () => {
     }
   })
 
+  it('invites playback once a loaded local voice sits idle', () => {
+    expect(readingStatusText(input({ localStatus: 'ready', voiceAvailable: true }))).toBe('Press play to begin')
+    expect(readingStatusText(input({ localStatus: 'ready', voiceAvailable: true, playback: { status: 'ready', display: 'Stopped' } }))).toBe('Press play to begin')
+  })
+
+  it('never replaces a real playback status with the invitation', () => {
+    expect(readingStatusText(input({ localStatus: 'ready', voiceAvailable: true, playback: { status: 'playing', display: 'Reading' } }))).toBe('Reading')
+    expect(readingStatusText(input({ localStatus: 'ready', voiceAvailable: true, playback: { status: 'paused', display: 'Paused' } }))).toBe('Paused')
+    expect(readingStatusText(input({ localStatus: 'ready', voiceAvailable: true, playback: { status: 'ready', display: 'Finished' } }))).toBe('Finished')
+    expect(readingStatusText(input({ localStatus: 'preparing', voiceAvailable: false }))).not.toBe('Press play to begin')
+  })
+
+  it('leaves the browser engine on its own idle wording', () => {
+    expect(readingStatusText(input({ engine: 'browser', voiceAvailable: true, playback: { status: 'ready', display: 'Ready' } }))).toBe('Ready')
+    expect(readingStatusText(input({ engine: 'browser', voiceAvailable: true, playback: { status: 'ready', display: 'Stopped' } }))).toBe('Stopped')
+  })
+
   it('lets a failed extraction outrank the voice state', () => {
     expect(readingStatusText(input({ extraction: 'error', localStatus: 'preparing' }))).toBe('Text extraction error')
   })
