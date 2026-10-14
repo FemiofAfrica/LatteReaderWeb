@@ -34,12 +34,9 @@ export interface NarratorPins {
     bundle: PartPinsJson; glue: PartPinsJson; wasm: PartPinsJson
   }
   phonemizer: {
-    manifest: string; component: string; project: string; tag: string; commit: string
-    licence: string; modified: string; noticeIndex: string; notice: string
-    source: { offer: string; file: string; bytes: number; sha256: string; files: number }
-    adapter: { path: string; bytes: number }
-    loader: { path: string; bytes: number }
-    files: { role: string; path: string; bytes: number; sha256: string }[]
+    component: string; project: string; revision: string; version: string; licence: string
+    fallback: { project: string; revision: string }; noticeIndex: string
+    files: PartPinsJson[]
   }
   symbols: { path: string; bytes: number; sha256: string }
   perFileLimit: { host: string; bytes: number }

@@ -4,8 +4,6 @@ import { localParts, type LocalPart } from './localPlan'
 type AudioPart = { part: LocalPart; buffer: AudioBuffer }
 export type LocalStatus = 'off' | 'preparing' | 'ready' | 'buffering' | 'playing' | 'paused' | 'error'
 
-/** True only under the private loopback preview, which injects this flag itself. */
-const privateTrial = () => (globalThis as { __LATTE_PRIVATE_NARRATOR__?: boolean }).__LATTE_PRIVATE_NARRATOR__ === true
 
 /**
  * The public runtime is the worker this app builds and serves itself. It loads
@@ -16,7 +14,7 @@ const privateTrial = () => (globalThis as { __LATTE_PRIVATE_NARRATOR__?: boolean
  * repository, so the user's own device testing is unaffected by publication.
  */
 const builtWorker = () => new Worker(new URL('../workers/narrator.worker.ts', import.meta.url), { type: 'module' })
-const trialWorker = () => new Worker('/__narrator/worker.mjs', { type: 'module' })
+
 
 /**
  * One inference in flight, current plus two ready buffers, <=30s of ready PCM.
@@ -60,7 +58,7 @@ export class LocalNarratorEngine implements SpeechEngine {
   }
   async prepare() {
     this.dispose(); this.state('preparing')
-    const worker = privateTrial() ? trialWorker() : builtWorker()
+    const worker = builtWorker()
     this.worker = worker
     worker.onmessage = ({ data }) => {
       if (worker !== this.worker) return
@@ -114,9 +112,10 @@ export class LocalNarratorEngine implements SpeechEngine {
   }
   private seconds() { return this.queue.reduce((n,p)=>n+p.buffer.duration,0) + (this.current ? this.current.buffer.duration-this.offset : 0) }
   private split(part: LocalPart) {
-    let mid = Math.floor(part.text.length/2)
-    if (/[\uD800-\uDBFF]/.test(part.text[mid-1])) mid--
-    if (mid < 1) throw Error('UNSPLITTABLE')
+    const midpoint = Math.floor(part.text.length/2)
+    const boundaries = [...part.text.matchAll(/\s+/g)].map(m=>m.index!+m[0].length).filter(n=>n>0&&n<part.text.length)
+    const mid = boundaries.sort((a,b)=>Math.abs(a-midpoint)-Math.abs(b-midpoint))[0]
+    if (!mid) throw Error('UNSUPPORTED_TEXT')
     const chunk = this.request!.chunks![part.chunk]
     const make = (start:number,end:number):LocalPart => {
       const spans=chunk.spans.filter(s=>s.end>start&&s.start<end)

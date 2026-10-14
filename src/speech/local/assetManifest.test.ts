@@ -7,7 +7,7 @@ import { loadVoiceManifest, manifestPath, VOICE_MANIFEST_URL, type VoiceBuildMan
 // Vitest's jsdom environment resolves import.meta.url to an http URL, so the
 // shipped files are read from the project root instead.
 const file = (relative: string) => join(process.cwd(), relative)
-const raw = readFileSync(file('public/voice/espeak/build-manifest.json'), 'utf8')
+const raw = readFileSync(file('compliance/espeak/voice/espeak/build-manifest.json'), 'utf8')
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 const respond = (body: string, ok = true, status = 200) =>
@@ -19,11 +19,11 @@ describe('speech component manifest', () => {
     const manifest = JSON.parse(raw) as VoiceBuildManifest
     expect(manifest.objectCode.map(entry => entry.role).sort()).toEqual(['data', 'wasm', 'worker-js'])
     for (const asset of manifest.objectCode) {
-      const bytes = readFileSync(file(`public/voice/espeak/${asset.file}`))
+      const bytes = readFileSync(file(`compliance/espeak/voice/espeak/${asset.file}`))
       expect(bytes.length, asset.file).toBe(asset.bytes)
       expect(sha256(bytes), asset.file).toBe(asset.sha256)
     }
-    const source = readFileSync(file(`public/voice/${manifest.correspondingSource.file.replace('../', '')}`))
+    const source = readFileSync(file(`compliance/espeak/voice/${manifest.correspondingSource.file.replace('../', '')}`))
     expect(source.length).toBe(manifest.correspondingSource.bytes)
     expect(sha256(source)).toBe(manifest.correspondingSource.sha256)
   })
@@ -32,7 +32,7 @@ describe('speech component manifest', () => {
     const manifest = JSON.parse(raw) as VoiceBuildManifest
     const paths = [manifest.noticeIndex, manifest.upstream.licenceText, manifest.correspondingSource.offer,
       ...manifest.notices.map(entry => entry.file)]
-    for (const entry of paths) expect(statSync(file(`public/voice/${entry.replace('../', '')}`)).isFile(), entry).toBe(true)
+    for (const entry of paths) expect(statSync(file(`compliance/espeak/voice/${entry.replace('../', '')}`)).isFile(), entry).toBe(true)
     expect(manifest.modifications.status).toBe('modified')
     expect(manifest.modifications.patches.length).toBeGreaterThan(0)
     expect(manifest.upstream.licence).toBe('GPL-3.0-or-later')

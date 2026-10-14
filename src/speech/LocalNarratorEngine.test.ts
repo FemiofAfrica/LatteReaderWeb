@@ -53,10 +53,15 @@ describe('private PCM lifecycle (control mocks, not audible evidence)',()=>{
   for(let i=1;i<=3;i++){sources[i].onended?.();await tick()}
   expect(end).toHaveBeenCalledTimes(1);expect(engine.status).toBe('ready');engine.dispose()
  })
- it('splits overbudget tokens rather than dropping a long source word',async()=>{
-  const engine=await ready();engine.speak(request('x'.repeat(200)));await tick()
+ it('splits overbudget text only at word boundaries with exact coverage',async()=>{
+  const engine=await ready();const text='longword '.repeat(24);engine.speak(request(text));await tick()
   workers[0].onmessage?.({data:{id:workers[0].requests[1].id,ok:false,error:'TOKEN_LIMIT'}});await tick()
-  expect(workers[0].requests[2].text).toBe('x'.repeat(100));workers[0].reply(2,pcm());await tick()
-  expect(workers[0].requests[3].text).toBe('x'.repeat(100));engine.dispose()
+  const first=String(workers[0].requests[2].text);workers[0].reply(2,pcm());await tick()
+  expect(first+workers[0].requests[3].text).toBe(text.trim());expect(first.endsWith(' ')).toBe(true);engine.dispose()
+ })
+ it('refuses an indivisible word rather than changing its pronunciation by splitting',async()=>{
+  const engine=await ready();const r=request('x'.repeat(200));engine.speak(r);await tick()
+  workers[0].onmessage?.({data:{id:workers[0].requests[1].id,ok:false,error:'TOKEN_LIMIT'}});await tick()
+  expect(workers[0].requests).toHaveLength(2);expect(r.onError).toHaveBeenCalledTimes(1);expect(engine.status).toBe('error');engine.dispose()
  })
 })

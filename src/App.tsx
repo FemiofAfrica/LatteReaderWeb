@@ -788,9 +788,7 @@ function App() {
                   <div className="local-narrator-controls">
                     <label>Reading engine <select aria-label="Reading engine" value={engine} onChange={event => chooseEngine(event.target.value)}><option value="browser">Browser default</option><option value="local">Local narrator (Jasper)</option></select></label>
                     {engine === 'local' && <>
-                      <p className="panel-copy">{privateNarrator
-                        ? 'Private Kitten Micro trial, Jasper, English. Enable loads about 53 MB from this private preview. PDF text and audio stay on this device. No saved audio or voice cache. English phonemes come from our own pinned eSpeak-NG build; its licence, notices and source are linked below. Public release and device support are not approved yet.'
-                        : `One fixed English voice, Jasper, running on this device. Enable loads about ${formatBytes(NARRATOR_COMPONENT_BYTES)} of voice files plus a small app worker from this site: the speech model in two parts, the voice, the speech runtime and the English phonemizer. Nothing is requested before you press Enable, and nothing comes from anywhere else. There is no saved voice cache in the app; later enables may fetch the files again. Actual network transfer depends on your browser cache and compression. Your PDF, its text, your selection and the audio stay on this device. Browser speech stays the default and goes on working.`}</p>
+                      <p className="panel-copy">{`English narrator with Misaki and a learned fallback. Enable loads about ${formatBytes(NARRATOR_COMPONENT_BYTES)} of voice files plus a small app worker. PDF text and audio stay on this device. Later enables may download again.`}</p>
                       <LocalNarratorNotices />
                       <p className="panel-copy">Browser voice choices below are preserved but do not apply to Jasper.</p>
                       <p className="panel-copy">Follows the playing chunk, not individual words. Cross-page follow moves at chunk completion. Foreground only.</p>

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 
-const bootstrap = readFileSync('public/voice/espeak/espeakng.bootstrap.js', 'utf8')
+const bootstrap = readFileSync('compliance/espeak/voice/espeak/espeakng.bootstrap.js', 'utf8')
 const fixture = [
   { role: 'worker-js', file: 'glue.js', body: Buffer.from('fixture glue') },
   { role: 'wasm', file: 'module.wasm', body: Buffer.from([0, 97, 115, 109]) },

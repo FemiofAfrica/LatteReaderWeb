@@ -9,7 +9,10 @@ export function localParts(chunks: readonly SpeechChunk[]): LocalPart[] {
       const window = c.text.slice(start, end)
       const sentence = /[.!?][”’"']?(?=\s|$)/g.exec(window)
       if (sentence) end = start + sentence.index + sentence[0].length
-      else if (end < c.text.length && window.lastIndexOf(' ') > 0) end = start + window.lastIndexOf(' ') + 1
+      else if (end < c.text.length) {
+        if (window.lastIndexOf(' ') > 0) end = start + window.lastIndexOf(' ') + 1
+        else { const next = c.text.indexOf(' ', end); end = next < 0 ? c.text.length : next + 1 }
+      }
       if (/[\uD800-\uDBFF]/.test(c.text[end - 1]) && /[\uDC00-\uDFFF]/.test(c.text[end] ?? '')) end--
       const spans = c.spans.filter(s => s.end > start && s.start < end)
       parts.push({ text:c.text.slice(start,end),chunk,start,end,page:spans[0]?.pageNumber ?? 1,pageEnd:spans.at(-1)?.pageNumber ?? 1 })

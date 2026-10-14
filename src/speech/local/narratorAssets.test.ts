@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { NARRATOR_LARGEST_FILE, NARRATOR_PINS, NARRATOR_COMPONENT_BYTES, NARRATOR_BASE_PATH, narratorPath } from './narratorAssets'
@@ -65,17 +65,15 @@ describe('local narrator assets we ship', () => {
     expect(NARRATOR_PINS.runtime.notice).toBe('../notices/LICENSE-MIT-onnxruntime-web.txt')
   })
 
-  it('records the phonemizer this app already ships, and keeps its file hashes true', () => {
+  it('pins every dictionary, learned network and derived source file', () => {
     for (const entry of NARRATOR_PINS.phonemizer.files) {
-      const bytes = readFileSync(join(process.cwd(), 'public/voice/espeak', entry.path.replace('../espeak/', '')))
-      expect(bytes.length, entry.path).toBe(entry.bytes)
-      expect(sha256(bytes), entry.path).toBe(entry.sha256)
-      expect(statSync(join(process.cwd(), 'public/voice/espeak', entry.path.replace('../espeak/', ''))).isFile()).toBe(true)
+      const bytes = bytesOf(entry.path)
+      expect(bytes.length).toBe(entry.bytes)
+      expect(sha256(bytes)).toBe(entry.sha256)
     }
-    expect(NARRATOR_PINS.phonemizer.files.map(entry => entry.role).sort()).toEqual(['data', 'wasm', 'worker-js'])
-    expect(NARRATOR_PINS.phonemizer.commit).toBe('4870adfa25b1a32b4361592f1be8a40337c58d6c')
-    expect(statSync(join(process.cwd(), 'public/voice/espeak/phonemizer.mjs')).size).toBe(NARRATOR_PINS.phonemizer.adapter.bytes)
-    expect(statSync(join(process.cwd(), 'public/voice/espeak/espeakng.bootstrap.js')).size).toBe(NARRATOR_PINS.phonemizer.loader.bytes)
+    expect(NARRATOR_PINS.phonemizer.project).toBe('hexgrad/misaki')
+    expect(NARRATOR_PINS.phonemizer.licence).toBe('Apache-2.0')
+    expect(NARRATOR_PINS.transfer.entries.some(e=>e.path.includes('espeak'))).toBe(false)
   })
 
   it('ships the audited symbol table the worker maps through', () => {

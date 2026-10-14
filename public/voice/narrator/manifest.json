@@ -67,48 +67,46 @@
     }
   },
   "phonemizer": {
-    "manifest": "../espeak/build-manifest.json",
-    "component": "espeak-ng 1.52.0",
-    "project": "espeak-ng",
-    "tag": "1.52.0",
-    "commit": "4870adfa25b1a32b4361592f1be8a40337c58d6c",
-    "licence": "GPL-3.0-or-later",
-    "modified": "2026-10-14",
-    "noticeIndex": "../notices/README.md",
-    "notice": "../notices/LICENSE-GPL-3.0.txt",
-    "source": {
-      "offer": "../source/SOURCE-OFFER.md",
-      "file": "../source/espeak-ng-1.52.0-corresponding-source.tar.gz",
-      "bytes": 18001299,
-      "sha256": "92a53e12260ad748cb80131b420ab73a4bc3c589296e6dbabd1195aee29a9ca1",
-      "files": 2597
+    "component": "Misaki-derived English frontend with learned BART fallback",
+    "project": "hexgrad/misaki",
+    "revision": "fba1236595f2d2bf21d414ba6e57d25256afada3",
+    "version": "0.9.4",
+    "licence": "Apache-2.0",
+    "fallback": {
+      "project": "PeterReid/graphemes_to_phonemes_en_us",
+      "revision": "a5631b285d18d59483c32c0c3379cb9fac924f4b"
     },
-    "adapter": {
-      "path": "../espeak/phonemizer.mjs",
-      "bytes": 3444
-    },
-    "loader": {
-      "path": "../espeak/espeakng.bootstrap.js",
-      "bytes": 3220
-    },
+    "noticeIndex": "../notices/index.html",
     "files": [
       {
-        "role": "worker-js",
-        "path": "../espeak/espeakng.worker.js",
-        "bytes": 125613,
-        "sha256": "d1da957c7776045bd97902894f8131c549bdd92b1b66e4b3c507e1c58e53d248"
+        "path": "frontend/frontend.mjs",
+        "bytes": 10070,
+        "sha256": "6842d118987e879dad31728b881ae79fb9150dd9f5882fc547c2aea3ffef7514"
       },
       {
-        "role": "wasm",
-        "path": "../espeak/espeakng.worker.wasm",
-        "bytes": 371333,
-        "sha256": "08a85955065e49401b7911d73b5b057061d8686311b6c329784539e1e85a5d14"
+        "path": "frontend/bart.mjs",
+        "bytes": 4528,
+        "sha256": "d270ee9a32cd4858d3a6942cc90fdb2df9448c66718f115e9f9257f5663927b6"
       },
       {
-        "role": "data",
-        "path": "../espeak/espeakng.worker.data",
-        "bytes": 904455,
-        "sha256": "dbc7f6e5ef43da6d8fc5e9e906a30a0922749b6d7d0011b455eac8aaf1f46c9d"
+        "path": "frontend/bart-config.json",
+        "bytes": 1257,
+        "sha256": "8deb3537fb29c63cd9f20d75515ae06e4c92f1b6db0703a2d45bca95b33a53a4"
+      },
+      {
+        "path": "frontend/model.safetensors",
+        "bytes": 3011692,
+        "sha256": "dc4a02e62d4fcb4bb4097ecf00db89b8e1a12a549a52ab6adfbba220b80a55c5"
+      },
+      {
+        "path": "frontend/us_gold.json",
+        "bytes": 3000469,
+        "sha256": "dc414872a49a28ae6c141463d502fd945f3b2fde040484fdc47d00cc4612686f"
+      },
+      {
+        "path": "frontend/us_silver.json",
+        "bytes": 3099517,
+        "sha256": "de8f67be911bb6c659187b4a65fd966b6a30e56350e0f790d763210b053ac475"
       }
     ]
   },
@@ -123,7 +121,7 @@
   },
   "transfer": {
     "basis": "Uncompressed component file sizes, one copy per entry; excludes built app worker and HTTP overhead. Actual transfer depends on cache, compression and retries.",
-    "bytes": 55642544,
+    "bytes": 63358119,
     "entries": [
       {
         "path": "chunks/model.onnx.part1",
@@ -156,34 +154,40 @@
         "why": "ONNX Runtime Web WebAssembly, served from this origin"
       },
       {
-        "path": "../espeak/phonemizer.mjs",
-        "bytes": 3444,
-        "why": "our adapter for the pinned eSpeak-NG build"
+        "path": "frontend/frontend.mjs",
+        "bytes": 10070,
+        "sha256": "6842d118987e879dad31728b881ae79fb9150dd9f5882fc547c2aea3ffef7514",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
       },
       {
-        "path": "../espeak/espeakng.bootstrap.js",
-        "bytes": 3220,
-        "why": "the eSpeak-NG loader that verifies its own three files"
+        "path": "frontend/bart.mjs",
+        "bytes": 4528,
+        "sha256": "d270ee9a32cd4858d3a6942cc90fdb2df9448c66718f115e9f9257f5663927b6",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
       },
       {
-        "path": "../espeak/build-manifest.json",
-        "bytes": 3893,
-        "why": "the eSpeak-NG pins that loader verifies against"
+        "path": "frontend/bart-config.json",
+        "bytes": 1257,
+        "sha256": "8deb3537fb29c63cd9f20d75515ae06e4c92f1b6db0703a2d45bca95b33a53a4",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
       },
       {
-        "path": "../espeak/espeakng.worker.js",
-        "bytes": 125613,
-        "why": "pinned eSpeak-NG worker-js"
+        "path": "frontend/model.safetensors",
+        "bytes": 3011692,
+        "sha256": "dc4a02e62d4fcb4bb4097ecf00db89b8e1a12a549a52ab6adfbba220b80a55c5",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
       },
       {
-        "path": "../espeak/espeakng.worker.wasm",
-        "bytes": 371333,
-        "why": "pinned eSpeak-NG wasm"
+        "path": "frontend/us_gold.json",
+        "bytes": 3000469,
+        "sha256": "dc414872a49a28ae6c141463d502fd945f3b2fde040484fdc47d00cc4612686f",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
       },
       {
-        "path": "../espeak/espeakng.worker.data",
-        "bytes": 904455,
-        "why": "pinned eSpeak-NG data"
+        "path": "frontend/us_silver.json",
+        "bytes": 3099517,
+        "sha256": "de8f67be911bb6c659187b4a65fd966b6a30e56350e0f790d763210b053ac475",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
       }
     ]
   }

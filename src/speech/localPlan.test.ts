@@ -7,7 +7,7 @@ describe('private narrator source bounds', () => {
     const chunks = planSpeechChunks(["Don't repeat ﬁne. Don't repeat ﬁne. " + 'x'.repeat(900)], 1, 'document')
     const parts = localParts(chunks)
     for (let i = 0; i < chunks.length; i++) expect(parts.filter(p => p.chunk === i).map(p => p.text).join('')).toBe(chunks[i].text)
-    expect(parts.every(p => p.text.length <= 250)).toBe(true)
+    expect(parts.some(p => p.text.trim() === 'x'.repeat(900)), JSON.stringify(parts.map(p=>({length:p.text.length,start:p.text.slice(0,12)})))).toBe(true) // pass intact to explicit refusal, never pronounce fragments
     for (const p of parts) expect(chunks[p.chunk].text.slice(p.start,p.end)).toBe(p.text)
   })
   it('splits astral characters safely and keeps cross-page offsets', () => {
