@@ -7,7 +7,13 @@ const browser=await chromium.connectOverCDP(process.env.LATTE_CDP || 'http://127
 const context=await browser.newContext({viewport:{width:1440,height:1000}})
 const page=await context.newPage()
 const requests=[]; const errors=[]
-page.on('request',r=>requests.push({url:r.url(),method:r.method(),body:!!r.postData()}))
+const phrase='well-known difference' // distinctive wording from the owned reading fixture
+const origin=new URL(process.env.LATTE_READER_URL||'http://127.0.0.1:4187/').origin
+// A blob: URL carries the creating origin, and the verified eSpeak-NG source is
+// handed to importScripts as a blob, so compare parsed origins rather than
+// string prefixes. data: URLs are inline, never a fetch.
+const leavesOrigin=raw=>raw.startsWith('data:')?false:new URL(raw).origin!==origin
+page.on('request',r=>requests.push({url:r.url(),method:r.method(),body:!!r.postData(),carriesText:r.url().includes(phrase)||(r.postData()??'').includes(phrase),external:leavesOrigin(r.url())}))
 page.on('pageerror',e=>errors.push(e.message))
 await page.addInitScript(()=>{
   window.__trial={inputs:[],metrics:[],pcm:[],audio:[],ticks:[],status:[]}
@@ -79,6 +85,14 @@ await page.getByRole('button',{name:'Resume reading',exact:true}).click()
 await page.locator('[data-local-status=playing]').waitFor({timeout:120000})
 assert.equal(await page.evaluate(()=>window.__trial.inputs.at(-1)),'A well-known difference.')
 await page.getByRole('button',{name:'Stop reading',exact:true}).click()
+// Privacy after a real read: no request left the origin, and none carried document text.
+await writeFile(`${out}/requests.json`,JSON.stringify(requests,null,2))
+assert.equal(requests.filter(r=>r.external).length,0,`no request may leave the preview origin: ${JSON.stringify(requests.filter(r=>r.external))}`)
+assert.equal(requests.filter(r=>r.carriesText).length,0,'no request may carry document text')
+assert.ok(requests.length>0,'the run must have made real requests')
+// The phonemes come from our own served build, not from the replaced npm bundle.
+assert.ok(requests.some(r=>r.url.includes('/voice/espeak/espeakng.worker.wasm')),'the pinned build must be the one loaded')
+assert.equal(requests.filter(r=>r.url.includes('phonemizer/dist')).length,0,'the replaced npm bundle must not be loaded')
 await page.setViewportSize({width:504,height:900})
 await page.getByRole('tab',{name:'Voices',exact:true}).click()
 await page.getByRole('button',{name:'Cancel and release voice',exact:true}).scrollIntoViewIfNeeded()

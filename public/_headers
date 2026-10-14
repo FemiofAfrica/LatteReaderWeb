@@ -1,2 +1,5 @@
 /*
   X-Robots-Tag: noindex, noarchive
+
+/voice/source/*.tar.gz
+  Content-Type: application/gzip

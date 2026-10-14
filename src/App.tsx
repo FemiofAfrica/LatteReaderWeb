@@ -27,6 +27,7 @@ import { sourceSelection, selectionChunks, type SourceSelection } from './domain
 import { ReadingProgress } from './components/ReadingProgress'
 import { BrowserSpeechEngine, type SpeechEngine } from './speech/SpeechEngine'
 import { LocalNarratorEngine, type LocalStatus } from './speech/LocalNarratorEngine'
+import { LocalNarratorNotices } from './components/LocalNarratorNotices'
 import './speech/local-narrator.css'
 import { watchBrowserVoices, type VoiceListState } from './speech/browserVoices'
 import { VoiceChooser } from './components/VoiceChooser'
@@ -786,7 +787,8 @@ function App() {
                   {privateNarrator && <div className="local-narrator-controls">
                     <label>Reading engine <select aria-label="Reading engine" value={engine} onChange={event => chooseEngine(event.target.value)}><option value="browser">Browser default</option><option value="local">Local narrator (test)</option></select></label>
                     {engine === 'local' && <>
-                      <p className="panel-copy">Private Kitten Micro trial, Jasper, English. Enable loads about 56 MB from this private preview. PDF text and audio stay on this device. No saved audio or voice cache. Licensing and device support are not approved for release.</p>
+                      <p className="panel-copy">Private Kitten Micro trial, Jasper, English. Enable loads about 56 MB from this private preview. PDF text and audio stay on this device. No saved audio or voice cache. English phonemes come from our own pinned eSpeak-NG build; its licence, notices and source are linked below. Public release and device support are not approved yet.</p>
+                      <LocalNarratorNotices />
                       <p className="panel-copy">Browser voice choices below are preserved but do not apply to Jasper.</p>
                       <p className="panel-copy">Follows the playing chunk, not individual words. Cross-page follow moves at chunk completion. Foreground only.</p>
                       <button type="button" className="secondary-button" disabled={localStatus !== 'off' && localStatus !== 'error'} onClick={() => void localRef.current?.prepare()}>Enable local narrator</button>

@@ -1,6 +1,9 @@
 // Served only by private-narrator-preview.mjs, never copied to public/dist.
 import * as ort from './node_modules/onnxruntime-web/dist/ort.wasm.min.mjs';
-import { phonemize } from './node_modules/phonemizer/dist/phonemizer.js';
+// Pinned eSpeak-NG WebAssembly build, served from public/voice/espeak/ with its
+// licence notices and corresponding source. Replaces the npm `phonemizer`
+// package, whose prebuilt bundle carried no GPL text and no source offer.
+import { listVoices, phonemize } from '/voice/espeak/phonemizer.mjs';
 ort.env.wasm.numThreads = 1;
 ort.env.wasm.proxy = false;
 ort.env.wasm.wasmPaths = new URL('./node_modules/onnxruntime-web/dist/', import.meta.url).href;
@@ -37,12 +40,15 @@ self.onmessage=async({data:d})=>{
   try {
     if(d.op==='init') {
       const start=performance.now();
+      // Loads, hash-verifies and mounts the pinned eSpeak-NG build (1.4 MB) before
+      // the 41 MB graph, so a bad component fails here rather than mid-read.
+      const voices=await listVoices();
       const manifest=await(await fetch('./assets/manifest.json',{credentials:'omit'})).json();
       symbols=await(await fetch('./assets/symbols.json',{credentials:'omit'})).json();
       voice=new Float32Array(await get('./assets/jasper.f32',manifest.derived_voice.sha256));
       if(voice.length!==400*256) throw Error('INVALID_VOICE');
       session=await ort.InferenceSession.create(await get('./assets/model.onnx',manifest.hashes['model.onnx']),{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-      self.postMessage({id:d.id,ok:true,initMs:performance.now()-start,threads:1});
+      self.postMessage({id:d.id,ok:true,initMs:performance.now()-start,threads:1,phonemizerVoices:voices.length});
     } else if(d.op==='generate') {
       const start=performance.now(); const i=await inputs(d.text);
       const out=await session.run({input_ids:new ort.Tensor('int64',BigInt64Array.from(i.ids,x=>BigInt(x)),[1,i.ids.length]),style:new ort.Tensor('float32',voice.slice(i.styleRow*256,(i.styleRow+1)*256),[1,256]),speed:new ort.Tensor('float32',new Float32Array([d.speed||1]),[1])});
@@ -54,7 +60,8 @@ self.onmessage=async({data:d})=>{
       } finally { for(const t of Object.values(out)) t.dispose(); }
     }
   } catch(e) {
-    const allowed=['ASSET_UNAVAILABLE','HASH_MISMATCH','INVALID_VOICE','UNKNOWN_PHONEMES','TOKEN_LIMIT','INVALID_PCM'];
-    self.postMessage({id:d.id,ok:false,error:allowed.includes(e.message)?e.message:'INFERENCE_FAILED'});
+    const allowed=['ASSET_UNAVAILABLE','HASH_MISMATCH','SIZE_MISMATCH','MANIFEST_UNAVAILABLE','MANIFEST_INCOMPLETE','INVALID_VOICE','INVALID_LANGUAGE','VOICE_UNAVAILABLE','UNKNOWN_PHONEMES','TOKEN_LIMIT','INVALID_PCM','SPEECH_COMPONENT_FAILED'];
+    const reason=String(e?.message??e);
+    self.postMessage({id:d.id,ok:false,error:allowed.find(code=>reason.startsWith(code))??'INFERENCE_FAILED'});
   }
 };

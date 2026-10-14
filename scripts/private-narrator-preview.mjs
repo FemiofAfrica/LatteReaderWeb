@@ -6,7 +6,7 @@ const root=resolve(process.env.LATTE_DIST || 'dist');
 const runtime=process.env.LATTE_NARRATOR_ASSETS;
 if(!runtime) throw Error('Set LATTE_NARRATOR_ASSETS to the approved feasibility directory');
 const assets=resolve(runtime);
-const mime={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.wasm':'application/wasm','.wav':'audio/wav','.pdf':'application/pdf','.svg':'image/svg+xml','.png':'image/png'};
+const mime={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.json':'application/json','.wasm':'application/wasm','.wav':'audio/wav','.pdf':'application/pdf','.svg':'image/svg+xml','.png':'image/png','.txt':'text/plain','.md':'text/markdown','.gz':'application/gzip'};
 http.createServer(async(req,res)=>{
   if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress) || !/^127\.0\.0\.1:\d+$/.test(req.headers.host||'')) { res.writeHead(403).end(); return; }
   if(req.method!=='GET'&&req.method!=='HEAD') {res.writeHead(405).end();return;}
