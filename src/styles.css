@@ -82,6 +82,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 }
 .coffee-mark span { width: 19px; height: 19px; border-radius: 50%; background: linear-gradient(145deg, var(--butter), var(--caramel)); box-shadow: 0 0 10px rgba(200,154,94,.4); }
 .coffee-mark.large { width: 78px; height: 78px; }
+.brand-mark { width: 36px; height: 36px; flex: 0 0 auto; display: block; filter: drop-shadow(0 2px 4px rgba(0,0,0,.45)); }
 .coffee-mark.large span { width: 41px; height: 41px; }
 
 .topbar-actions, .document-status { display: flex; align-items: center; gap: 10px; min-width: 0; }

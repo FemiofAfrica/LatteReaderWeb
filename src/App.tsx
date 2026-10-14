@@ -33,6 +33,7 @@ import type { UploadFailure } from './pdf/uploadFailure'
 import { DiagnosticsStatus } from './components/DiagnosticsStatus'
 import { PageTurnViewer } from './components/PageTurnViewer'
 import { RotaryControl } from './components/RotaryControl'
+import { BrandMark } from './components/BrandMark'
 
 const formatNumber = new Intl.NumberFormat()
 const formatBytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -662,7 +663,7 @@ function App() {
       <section className="reader-deck" data-panel={activePanel} aria-label="LatteReader PDF console">
         <header className="topbar" ref={topbarRef}>
           <div className="brand-lockup">
-            <span className="coffee-mark" aria-hidden="true"><span /></span>
+            <BrandMark />
             <span><strong>LatteReader</strong><small>Open a PDF · Extract · Listen</small></span>
           </div>
           <div className="topbar-actions">
