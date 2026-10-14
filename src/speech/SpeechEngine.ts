@@ -1,3 +1,4 @@
+import { resolveVoice } from './browserVoices'
 import type { SpeechChunk } from '../domain/speechPlan'
 import { planSpeechChunks } from '../domain/speechPlan'
 import { recordEvent } from '../diagnostics/diagnostics'
@@ -5,6 +6,9 @@ import { recordEvent } from '../diagnostics/diagnostics'
 export interface SpeechRequest {
   text: string
   rate: number
+  voiceKey?: string
+  language?: string
+  onVoiceFallback?: (fallback: boolean) => void
   chunks?: SpeechChunk[]
   onPosition?: (chunk: number, offset: number, evidence: 'boundary' | 'utterance') => void
   onPage?: (page: number) => void
@@ -31,13 +35,12 @@ export class BrowserSpeechEngine implements SpeechEngine {
   get available(): boolean { return typeof window !== 'undefined' && 'speechSynthesis' in window }
   onEnd(callback: () => void): void { this.ended = callback }
 
-  speak({ text, rate, chunks, onPage, onPosition, onError }: SpeechRequest): void {
+  speak({ text, rate, chunks, onPage, onPosition, onError, voiceKey, language = navigator.language, onVoiceFallback }: SpeechRequest): void {
     this.stop() // once per user run, never between normal chunks
     const started = performance.now()
     recordEvent('speech.start')
     const generation = this.generation
     const segments = chunks ?? planSpeechChunks([text], 1, 'page')
-    const voices = window.speechSynthesis.getVoices()
     let index = 0
     const next = () => {
       if (generation !== this.generation) return
@@ -47,7 +50,10 @@ export class BrowserSpeechEngine implements SpeechEngine {
       const segment = segments[index++]
       const utterance = new SpeechSynthesisUtterance(segment.text)
       utterance.rate = rate
-      utterance.voice = voices[segment.voiceIndex % Math.max(voices.length, 1)] ?? null
+      const choice = resolveVoice(window.speechSynthesis.getVoices(), segment.voiceKey ?? voiceKey, language)
+      utterance.voice = choice.voice
+      utterance.lang = choice.voice?.lang || choice.language
+      onVoiceFallback?.(choice.fallback)
       let completed = false
       const follow = (offset: number, evidence: 'boundary' | 'utterance') => {
         if (generation !== this.generation || completed) return

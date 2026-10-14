@@ -4,6 +4,7 @@ import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/legacy/build/pdf.mj
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import type { TextItem } from 'pdfjs-dist/types/src/display/api'
 import { normalizeExtractedText } from '../domain/textQuality'
+import { joinPdfTextItems } from '../domain/pdfText'
 
 // PDF.js's automatic worker setup reads window.location, which does not
 // exist in this extraction worker. Supply a real nested worker explicitly
@@ -32,13 +33,7 @@ self.onmessage = async (event: MessageEvent<Request>) => {
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber)
       const content = await page.getTextContent()
-      const text = content.items
-        .filter((item): item is TextItem => 'str' in item)
-        .map((item) => `${item.str}${item.hasEOL ? '\n' : ' '}`)
-        .join('')
-        .replace(/[ \t]+/g, ' ')
-        .replace(/ *\n */g, '\n')
-        .trim()
+      const text = joinPdfTextItems(content.items.filter((item): item is TextItem => 'str' in item))
       const normalized = normalizeExtractedText(text)
       characterCount += normalized.text.length
       if (text.length >= 20) pagesWithText += 1

@@ -7,6 +7,7 @@
     "dev": "vite",
     "test": "vitest run",
     "test:spoken-position": "python3 tests/fixtures/generate_spoken_fixture.py && node scripts/spoken-position-smoke.mjs",
+    "test:spacing-voices": "node scripts/spacing-voices-smoke.mjs",
     "test:reading": "node scripts/reading-quality-smoke.mjs",
     "test:selection": "python3 tests/fixtures/generate_selection_fixture.py && node scripts/selection-quality-smoke.mjs",
     "test:extraction-quality": "node scripts/extraction-quality-probe.mjs && python3 tests/fixtures/inspect_font_mapping.py",

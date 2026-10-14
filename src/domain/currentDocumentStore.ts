@@ -9,6 +9,8 @@ export interface PersistedReaderState {
   readingPage?: number
   zoom: number
   speed: number
+  /** Stable browser voice identity, never a list index. */
+  voiceKey?: string
   readScope: ReadScope
 }
 

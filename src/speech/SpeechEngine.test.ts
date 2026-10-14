@@ -17,6 +17,23 @@ beforeEach(() => {
     constructor(text: string) { this.text = text }
   } })
 })
+it('does not allocate a character an arbitrary list index or modulo voice', () => {
+  const engine = new BrowserSpeechEngine()
+  engine.speak({ text: '', rate: 1, chunks: [{ text: 'Ro.', voiceIndex: 99, spans: [] }] })
+  expect(utterances[0].voice).toBeNull()
+})
+it('keeps a selected identity through reorder and refreshes the list for every chunk', () => {
+  const a = { voiceURI: 'a', name: 'English', lang: 'en-US', localService: true, default: true } as SpeechSynthesisVoice
+  const b = { voiceURI: 'b', name: 'Other', lang: 'fr-FR', localService: true, default: false } as SpeechSynthesisVoice
+  let voices = [a, b]
+  window.speechSynthesis.getVoices = () => voices
+  const key = JSON.stringify([a.voiceURI, a.name, a.lang, a.localService])
+  const engine = new BrowserSpeechEngine()
+  engine.speak({ text: '', rate: 1, chunks: [{ text: 'Ro.', voiceIndex: 7, voiceKey: key, spans: [] }, { text: 'Next.', voiceIndex: 7, voiceKey: key, spans: [] }] })
+  expect(utterances[0].voice).toBe(a)
+  voices = [b, a]; end()
+  expect(utterances[1].voice).toBe(a)
+})
 const end = () => utterances.at(-1)?.onend?.({} as SpeechSynthesisEvent)
 describe('source-aware browser transport', () => {
   it('follows entered spans, not buffered pages, and cancels only once per run', () => {

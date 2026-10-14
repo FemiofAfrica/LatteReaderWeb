@@ -14,7 +14,9 @@ export interface VoiceProfile {
   displayName: string
   aliases: string[]
   confidence: number
+  /** Legacy speaker grouping only. Never an installed-voice list index. */
   voiceIndex: number
+  voiceKey?: string
   enabled: boolean
 }
 
@@ -142,6 +144,14 @@ export function analyzeDocument(documentId: string, documentName: string, pages:
   })
 
   return { schemaVersion: 1, documentId, documentName, profiles, segments: assigned }
+}
+
+export function retainVoiceChoices(fresh: DocumentVoicePlan, saved: DocumentVoicePlan | null): DocumentVoicePlan {
+  if (!saved || saved.documentId !== fresh.documentId) return fresh
+  return { ...fresh, profiles: fresh.profiles.map(profile => {
+    const previous = saved.profiles.find(p => p.id === profile.id)
+    return previous ? { ...profile, voiceKey: previous.voiceKey, enabled: previous.enabled } : profile
+  }) }
 }
 
 export function chunkText(text: string, maxLength = 3500): string[] {

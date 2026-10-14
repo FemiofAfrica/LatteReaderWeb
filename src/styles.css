@@ -154,6 +154,11 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .delete-button { width: 100%; min-height: 38px; margin-top: 12px; border: 1px solid rgba(255,173,145,.45); border-radius: 8px; background: rgba(199,96,64,.1); color: #ffc0aa; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .delete-button:hover { background: rgba(199,96,64,.2); }
 .compact-delete { width: auto; padding: 8px 14px; }
+.voice-choice { display: grid; gap: 5px; min-width: 0; margin-block: 8px; font-size: 11px; }
+.voice-choice select { width: 100%; min-width: 0; min-height: 36px; color: var(--butter); background: var(--espresso); border: 1px solid var(--muted); border-radius: 4px; font: inherit; }
+.voice-choice small { white-space: normal; }
+.voice-status { margin-block: 4px; }
+.speaker-list li .voice-choice { grid-column: 1 / -1; }
 .speaker-list > p { margin: 10px 0 5px; color: var(--butter); font: 500 10px DM Mono, monospace; }
 .speaker-list ul { margin: 0; padding: 0; list-style: none; }
 .speaker-list li { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 5px 0; }
@@ -369,7 +374,8 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   .delete-button { min-height: 32px; margin-top: 8px; width: auto; padding-inline: 10px; background: transparent; border-color: var(--border); text-transform: none; letter-spacing: 0; font-weight: 500; }
   .document-details > div { max-height: 48px; overflow: auto; padding-inline: 3px; scrollbar-color: var(--crema) transparent; }
   #panel-voices h2 { margin-bottom: 6px; }
-  #panel-voices { padding-block: 8px; }
+  #panel-voices { padding-block: 8px; flex: 1 1 auto; min-height: 76px; overflow: auto; scrollbar-color: var(--crema) transparent; }
+  .control-rail .bezel:last-child { min-height: 180px; }
   .engine-details .panel-copy { max-height: 24px; overflow: auto; }
   .speaker-list { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; }
   .speaker-list ul { min-height: 48px; overflow: auto; padding-inline: 3px; scrollbar-color: var(--crema) transparent; }

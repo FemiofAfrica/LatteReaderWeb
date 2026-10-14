@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { PdfCanvas } from './components/PdfCanvas'
-import { analyzeDocument, type DocumentVoicePlan } from './domain/analysis'
+import { analyzeDocument, retainVoiceChoices, type DocumentVoicePlan } from './domain/analysis'
 import {
   clearCurrentDocument,
   CURRENT_SCHEMA_VERSION,
@@ -25,6 +25,8 @@ import { ReadAlong } from './components/ReadAlong'
 import { sourceSelection, selectionChunks, type SourceSelection } from './domain/selection'
 import { ReadingProgress } from './components/ReadingProgress'
 import { BrowserSpeechEngine } from './speech/SpeechEngine'
+import { watchBrowserVoices, type VoiceListState } from './speech/browserVoices'
+import { VoiceChooser } from './components/VoiceChooser'
 import { recordEvent } from './diagnostics/diagnostics'
 import { shouldRecordProgress } from './diagnostics/progress'
 import type { UploadFailure } from './pdf/uploadFailure'
@@ -126,6 +128,12 @@ function App() {
   const [fitRequested, setFitRequested] = useState(false)
   const [speed, setSpeed] = useState(1)
   const [readScope, setReadScope] = useState<ReadScope>('document')
+  const [defaultVoiceKey, setDefaultVoiceKey] = useState<string | undefined>()
+  const [voiceList, setVoiceList] = useState<VoiceListState>({ voices: [], status: 'loading' })
+  const [voiceFallback, setVoiceFallback] = useState(false)
+  useEffect(() => watchBrowserVoices(setVoiceList), [])
+  const defaultVoiceRef = useRef(defaultVoiceKey)
+  defaultVoiceRef.current = defaultVoiceKey
   const [voicePlan, setVoicePlan] = useState<DocumentVoicePlan | null>(null)
   const [analysisMessage, setAnalysisMessage] = useState('Find character labels and dialogue in this PDF.')
   const [uploadError, setUploadError] = useState('')
@@ -153,6 +161,7 @@ function App() {
   }
 
   const completeRun = () => {
+    setVoiceFallback(false)
     const pages = runRef.current.pages
     if (pages > 1) recordEvent('playback.complete', { count: pages, durationMs: performance.now() - runRef.current.started })
     runRef.current = { pages: 0, started: 0 }
@@ -266,6 +275,8 @@ function App() {
     setManualZoom(false)
     setFitRequested(false)
     setSpeed(record.reader.speed)
+    setDefaultVoiceKey(record.reader.voiceKey)
+    setVoiceFallback(false)
     setReadScope(record.reader.readScope)
     setVoicePlan(null) // Reanalyze stored text with current extraction before speaking.
     setAnalysisMessage(record.voicePlan
@@ -294,7 +305,7 @@ function App() {
         const message = event.data
         if (message.type === 'page') extractedText[message.pageNumber - 1] = message.text
         if (message.type === 'complete' && record.voicePlan) {
-          const refreshed = analyzeDocument(record.id, record.name, extractedText)
+          const refreshed = retainVoiceChoices(analyzeDocument(record.id, record.name, extractedText), record.voicePlan)
           setVoicePlan(refreshed)
           void updateCurrentDocument({ voicePlan: refreshed })
         }
@@ -407,14 +418,14 @@ function App() {
   useEffect(() => {
     if (!documentState) return
     const timeout = window.setTimeout(() => {
-      void updateCurrentDocument({ reader: { currentPage, readingPage: spokenPage, zoom, speed, readScope } }, documentState.id)
+      void updateCurrentDocument({ reader: { currentPage, readingPage: spokenPage, zoom, speed, readScope, voiceKey: defaultVoiceKey } }, documentState.id)
     }, 150)
     return () => window.clearTimeout(timeout)
-  }, [currentPage, spokenPage, zoom, speed, readScope, documentState?.id])
+  }, [currentPage, spokenPage, zoom, speed, readScope, defaultVoiceKey, documentState?.id])
 
   useEffect(() => {
     if (!documentState) return
-    const save = () => { void updateCurrentDocument({ reader: { currentPage: currentPageRef.current, readingPage: readingPageRef.current || spokenPage, zoom, speed, readScope } }, documentState.id) }
+    const save = () => { void updateCurrentDocument({ reader: { currentPage: currentPageRef.current, readingPage: readingPageRef.current || spokenPage, zoom, speed, readScope, voiceKey: defaultVoiceRef.current } }, documentState.id) }
     // Saving on hide does not pause or cancel the browser voice. No automatic restart.
     const hide = () => { if (document.visibilityState === 'hidden') save() }
     document.addEventListener('visibilitychange', hide)
@@ -427,7 +438,7 @@ function App() {
     const started = performance.now()
     recordEvent('analysis.start', { count: documentState.pageCount })
     try {
-      const plan = analyzeDocument(documentState.id, documentState.name, documentState.pages)
+      const plan = retainVoiceChoices(analyzeDocument(documentState.id, documentState.name, documentState.pages), voicePlan)
       setVoicePlan(plan)
       void updateCurrentDocument({ voicePlan: plan })
       const characterCount = Math.max(0, plan.profiles.length - 1)
@@ -437,6 +448,14 @@ function App() {
       recordEvent('analysis.fail', { durationMs: performance.now() - started })
       setAnalysisMessage('Character analysis failed. Try again.')
     }
+  }
+
+  const chooseCharacterVoice = (id: string, key: string | undefined) => {
+    if (!voicePlan || !documentState) return
+    const updated = { ...voicePlan, profiles: voicePlan.profiles.map(p => p.id === id ? { ...p, voiceKey: key } : p) }
+    setVoicePlan(updated)
+    voicePlanRef.current = updated
+    void updateCurrentDocument({ voicePlan: updated }, documentState.id)
   }
 
   const currentText = documentState?.pages[currentPage - 1] ?? ''
@@ -465,7 +484,7 @@ function App() {
     runRef.current = { pages: new Set(chunks.flatMap(c => c.spans.map(s => s.pageNumber))).size, started: performance.now() }
     readingPageRef.current = page
     dispatchPlayback({ type: 'PLAY', scope, page })
-    speechRef.current.speak({ text: '', chunks, rate: speedRef.current,
+    speechRef.current.speak({ text: '', chunks, rate: speedRef.current, voiceKey: defaultVoiceRef.current, onVoiceFallback: setVoiceFallback,
       onPosition: (chunk, char, evidence) => {
         const offset = origin + remaining.starts[chunk] + char
         setReadingOffset(offset)
@@ -581,6 +600,7 @@ function App() {
   </div>
 
   const stop = () => {
+    setVoiceFallback(false)
     clearWait()
     runRef.current = { pages: 0, started: 0 }
     readingPageRef.current = 0
@@ -714,7 +734,9 @@ function App() {
                 <section className="bezel" id="panel-voices" data-panel="voices">
                   <h2>Voice engine</h2>
                   <div className="engine-readout"><span className="status-led ready" aria-hidden="true" /><strong>Browser voice</strong></div>
-                  <details className="engine-details"><summary>About browser voices</summary><p className="panel-copy" tabIndex={0}>Uses voices installed in this browser. Kokoro is not active.</p></details>
+                  <p className="panel-copy voice-status" role="status">{voiceList.status === 'unsupported' ? 'Speech is not supported.' : voiceFallback ? 'The selected voice is unavailable. Using automatic.' : voiceList.status === 'loading' ? 'Loading voices. Browser default can read.' : voiceList.status === 'empty' ? 'No voices listed. Try browser default.' : `${voiceList.voices.length} browser voices available.`}</p>
+                  <VoiceChooser label="Default reading voice" selected={defaultVoiceKey} voices={voiceList.voices} onChange={setDefaultVoiceKey} />
+                  <details className="engine-details"><summary>About browser voices</summary><p className="panel-copy" tabIndex={0}>Uses voices provided by this browser. Automatic uses your browser language, not the PDF language. Changes apply when you start reading again. If no voices are listed and reading is silent, install or enable a browser voice. Kokoro is not active.</p></details>
                 </section>
 
                 <section className="bezel" data-panel="voices">
@@ -724,7 +746,7 @@ function App() {
                   {voicePlan && (
                     <div className="speaker-list" role="group" aria-label="Detected speakers">
                       <p><strong>{voicePlan.profiles.length}</strong> voices · <strong>{voicePlan.segments.length}</strong> segments</p>
-                      <ul tabIndex={0}>{voicePlan.profiles.map((profile) => <li key={profile.id}><span className={profile.id === 'narrator' ? 'narrator-dot' : ''} /><strong title={profile.displayName}>{profile.displayName}</strong><small>{Math.round(profile.confidence * 100)}%</small></li>)}</ul>
+                      <ul tabIndex={0}>{voicePlan.profiles.map((profile) => <li key={profile.id}><span className={profile.id === 'narrator' ? 'narrator-dot' : ''} /><strong title={profile.displayName}>{profile.displayName}</strong><small>{Math.round(profile.confidence * 100)}%</small><VoiceChooser label={`${profile.displayName} voice`} automaticLabel="Use default reading voice" selected={profile.voiceKey} voices={voiceList.voices} onChange={key => chooseCharacterVoice(profile.id, key)} /></li>)}</ul>
                     </div>
                   )}
                 </section>
