@@ -91,11 +91,11 @@ check((await page.locator('.zoom-readout').innerText()).includes('120%'), 'Reloa
 check(await page.getByText('Alice', { exact: true }).isVisible(), 'Reload did not restore the voice plan')
 
 await page.getByRole('button', { name: 'Start reading' }).click()
-check((await page.locator('.playback-readout strong').innerText()).toLowerCase() === 'playing', 'Playback did not enter playing state')
+check((await page.locator('.playback-readout strong').innerText()).toLowerCase() === 'reading', 'Playback did not enter Reading state')
 await page.getByRole('button', { name: 'Pause reading' }).click()
 check((await page.locator('.playback-readout strong').innerText()).toLowerCase() === 'paused', 'Playback did not enter paused state')
 await page.getByRole('button', { name: 'Stop reading' }).click()
-check((await page.locator('.playback-readout strong').innerText()).toLowerCase() === 'ready', 'Playback did not return to ready state')
+check((await page.locator('.playback-readout strong').innerText()).toLowerCase() === 'stopped', 'Playback did not enter Stopped state')
 
 const desktopLayout = await page.evaluate(() => ({ body: document.body.scrollWidth, viewport: innerWidth }))
 check(desktopLayout.body <= desktopLayout.viewport, `Desktop body overflowed: ${desktopLayout.body} > ${desktopLayout.viewport}`)

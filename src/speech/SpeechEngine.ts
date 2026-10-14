@@ -10,7 +10,7 @@ export interface SpeechRequest {
   language?: string
   onVoiceFallback?: (fallback: boolean) => void
   chunks?: SpeechChunk[]
-  onPosition?: (chunk: number, offset: number, evidence: 'boundary' | 'utterance') => void
+  onPosition?: (chunk: number, offset: number, evidence: 'boundary' | 'utterance' | 'audio-chunk', end?: number) => void
   onPage?: (page: number) => void
   onError?: () => void
 }

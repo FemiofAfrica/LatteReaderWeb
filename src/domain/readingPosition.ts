@@ -4,7 +4,7 @@ import type { SpeechChunk } from './speechPlan'
 export interface SourceCharacter { pageNumber: number; start: number; end: number }
 export interface ReadingPosition {
   offset: number
-  evidence: 'boundary' | 'utterance'
+  evidence: 'boundary' | 'utterance' | 'audio-chunk'
   ranges: SourceCharacter[]
 }
 
@@ -67,6 +67,18 @@ export function sentencePosition(timeline: ReadingTimeline, offset: number, evid
     else ranges.push({ ...item })
   }
   return { offset, evidence, ranges }
+}
+
+/** Playback-proven chunk bounds, not estimated word or sentence timing. */
+export function audioChunkPosition(timeline: ReadingTimeline, start: number, end: number): ReadingPosition {
+  const ranges: SourceCharacter[] = []
+  for (const item of timeline.source.slice(start, end)) {
+    if (!item) continue
+    const last = ranges.at(-1)
+    if (last && last.pageNumber === item.pageNumber && item.start <= last.end) last.end = Math.max(last.end, item.end)
+    else ranges.push({ ...item })
+  }
+  return { offset: start, evidence: 'audio-chunk', ranges }
 }
 
 export function sentenceSkip(timeline: ReadingTimeline, offset: number, direction: -1 | 1): number {

@@ -20,11 +20,13 @@ import {
   type ReadScope,
 } from './domain/playback'
 import { planSpeechChunks, type SpeechChunk } from './domain/speechPlan'
-import { readingTimeline, seekChunks, sentencePosition, sentenceSkip, type ReadingPosition } from './domain/readingPosition'
+import { readingTimeline, seekChunks, sentencePosition, audioChunkPosition, sentenceSkip, type ReadingPosition } from './domain/readingPosition'
 import { ReadAlong } from './components/ReadAlong'
 import { sourceSelection, selectionChunks, type SourceSelection } from './domain/selection'
 import { ReadingProgress } from './components/ReadingProgress'
-import { BrowserSpeechEngine } from './speech/SpeechEngine'
+import { BrowserSpeechEngine, type SpeechEngine } from './speech/SpeechEngine'
+import { LocalNarratorEngine, type LocalStatus } from './speech/LocalNarratorEngine'
+import './speech/local-narrator.css'
 import { watchBrowserVoices, type VoiceListState } from './speech/browserVoices'
 import { VoiceChooser } from './components/VoiceChooser'
 import { recordEvent } from './diagnostics/diagnostics'
@@ -89,7 +91,11 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const extractionWorkerRef = useRef<Worker | null>(null)
   const resetVoicesRef = useRef(false)
-  const speechRef = useRef(new BrowserSpeechEngine())
+  const speechRef = useRef<SpeechEngine>(new BrowserSpeechEngine())
+  const localRef = useRef<LocalNarratorEngine | null>(null)
+  const [engine, setEngine] = useState('browser')
+  const [localStatus, setLocalStatus] = useState<LocalStatus>('off')
+  const privateNarrator = (window as Window & { __LATTE_PRIVATE_NARRATOR__?: boolean }).__LATTE_PRIVATE_NARRATOR__ === true
   const mobileBarRef = useRef<HTMLElement>(null)
   const topbarRef = useRef<HTMLElement>(null)
   const previewScrollRef = useRef<HTMLDivElement>(null)
@@ -180,6 +186,7 @@ function App() {
     return () => {
       clearWait()
       speechRef.current.stop()
+      localRef.current?.dispose()
     }
   }, [])
 
@@ -491,10 +498,10 @@ function App() {
     readingPageRef.current = page
     dispatchPlayback({ type: 'PLAY', scope, page })
     speechRef.current.speak({ text: '', chunks, rate: speedRef.current, voiceKey: defaultVoiceRef.current, onVoiceFallback: setVoiceFallback,
-      onPosition: (chunk, char, evidence) => {
+      onPosition: (chunk, char, evidence, end) => {
         const offset = origin + remaining.starts[chunk] + char
         setReadingOffset(offset)
-        setPosition(sentencePosition(full, offset, evidence))
+        setPosition(evidence === 'audio-chunk' ? audioChunkPosition(full, offset, origin + remaining.starts[chunk] + (end ?? char + 1)) : sentencePosition(full, offset, evidence))
       },
       onPage: page => {
         readingPageRef.current = page; setSpokenPage(page)
@@ -524,6 +531,7 @@ function App() {
     else { pendingSeekRef.current = launch } // A stopped/paused seek never starts audio.
   }
   const readingStatus = documentState?.extraction === 'error' ? 'Text extraction error'
+    : engine === 'local' && localStatus === 'buffering' ? 'Buffering local voice'
     : !speechRef.current.available ? 'Voice unavailable'
     : documentState?.extraction === 'complete' && !documentState.pagesWithReadableText ? 'No readable text'
     : playback.display ?? 'Ready'
@@ -619,7 +627,18 @@ function App() {
     dispatchPlayback({ type: 'STOP' })
   }
 
+  const chooseEngine = (choice: string) => {
+    stop(); localRef.current?.dispose()
+    setEngine(choice); setSessionChunks(null); sessionRef.current = null
+    if (choice === 'local') {
+      const local = new LocalNarratorEngine(setLocalStatus)
+      localRef.current = local; speechRef.current = local
+    } else { localRef.current = null; speechRef.current = new BrowserSpeechEngine() }
+    speechRef.current.onEnd(() => endHandlerRef.current())
+  }
+
   const restoreBrowserDefault = async () => {
+    if (engine === 'local') chooseEngine('browser')
     if (!documentState) return
     stop()
     resetVoicesRef.current = true
@@ -760,7 +779,18 @@ function App() {
 
                 <section className="bezel" id="panel-voices" data-panel="voices">
                   <h2>Voice engine</h2>
-                  <div className="engine-readout"><span className="status-led ready" aria-hidden="true" /><strong>Browser voice</strong></div>
+                  {privateNarrator && <div className="local-narrator-controls">
+                    <label>Reading engine <select aria-label="Reading engine" value={engine} onChange={event => chooseEngine(event.target.value)}><option value="browser">Browser default</option><option value="local">Local narrator (test)</option></select></label>
+                    {engine === 'local' && <>
+                      <p className="panel-copy">Private Kitten Micro trial, Jasper, English. Enable loads about 56 MB from this private preview. PDF text and audio stay on this device. No saved audio or voice cache. Licensing and device support are not approved for release.</p>
+                      <p className="panel-copy">Browser voice choices below are preserved but do not apply to Jasper.</p>
+                      <p className="panel-copy">Follows the playing chunk, not individual words. Cross-page follow moves at chunk completion. Foreground only.</p>
+                      <button type="button" className="secondary-button" disabled={localStatus !== 'off' && localStatus !== 'error'} onClick={() => void localRef.current?.prepare()}>Enable local narrator</button>
+                      <button type="button" className="secondary-button" onClick={() => { stop(); localRef.current?.dispose() }}>Cancel and release voice</button>
+                      <p className="panel-copy" role="status" data-local-status={localStatus}>{localStatus === 'ready' ? 'Voice ready. Press Play.' : localStatus === 'error' ? 'Local voice failed. Retry or use Browser default.' : `Local voice: ${localStatus}`}</p>
+                    </>}
+                  </div>}
+                  <div className="engine-readout"><span className="status-led ready" aria-hidden="true" /><strong>{engine === 'local' ? 'Jasper (private trial)' : 'Browser voice'}</strong></div>
                   <p className="panel-copy voice-status" role="status">{voiceList.status === 'unsupported' ? 'Speech is not supported.' : voiceFallback ? 'The selected voice is unavailable. Using automatic.' : voiceList.status === 'loading' ? 'Loading voices. Browser default can read.' : voiceList.status === 'empty' ? 'No voices listed. Try browser default.' : `${voiceList.voices.length} browser voices available.`}</p>
                   <VoiceChooser label="Default reading voice" selected={defaultVoiceKey} voices={voiceList.voices} onChange={setDefaultVoiceKey} />
                   <button type="button" className="secondary-button restore-default" onClick={() => void restoreBrowserDefault()}>Restore browser default</button>
