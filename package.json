@@ -29,6 +29,8 @@
     "test:compatibility": "node scripts/compatibility-smoke.mjs",
     "voice:manifest": "node scripts/voice-manifest.mjs",
     "voice:smoke": "node scripts/narrator-component-smoke.mjs",
+    "narrator:stage": "node scripts/stage-narrator-assets.mjs",
+    "test:narrator": "node scripts/narrator-public-smoke.mjs",
     "typecheck": "tsc -b --pretty false",
     "build": "tsc -b && vite build",
     "preview": "vite preview"

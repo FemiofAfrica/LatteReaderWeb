@@ -3,11 +3,28 @@ import { localParts, type LocalPart } from './localPlan'
 
 type AudioPart = { part: LocalPart; buffer: AudioBuffer }
 export type LocalStatus = 'off' | 'preparing' | 'ready' | 'buffering' | 'playing' | 'paused' | 'error'
-/** Private foreground trial: one inference, current + two ready, <=30s PCM.
- * Cancellation invalidates results; pause preserves rendered sample offset. */
+
+/** True only under the private loopback preview, which injects this flag itself. */
+const privateTrial = () => (globalThis as { __LATTE_PRIVATE_NARRATOR__?: boolean }).__LATTE_PRIVATE_NARRATOR__ === true
+
+/**
+ * The public runtime is the worker this app builds and serves itself. It loads
+ * the pinned assets from `/voice/narrator/`, our own origin only.
+ *
+ * The private trial keeps its own worker, served exclusively by
+ * `scripts/private-narrator-preview.mjs` from assets that stay outside the
+ * repository, so the user's own device testing is unaffected by publication.
+ */
+const builtWorker = () => new Worker(new URL('../workers/narrator.worker.ts', import.meta.url), { type: 'module' })
+const trialWorker = () => new Worker('/__narrator/worker.mjs', { type: 'module' })
+
+/**
+ * One inference in flight, current plus two ready buffers, <=30s of ready PCM.
+ * Cancellation invalidates results; pause preserves the rendered sample offset.
+ */
 export class LocalNarratorEngine implements SpeechEngine {
-  readonly id = 'kitten-micro-private'
-  readonly label = 'Local narrator (test)'
+  readonly id = 'kitten-micro-jasper'
+  readonly label = 'Local narrator (Jasper)'
   private worker: Worker | null = null
   private context: AudioContext | null = null
   private serial = 0
@@ -43,7 +60,7 @@ export class LocalNarratorEngine implements SpeechEngine {
   }
   async prepare() {
     this.dispose(); this.state('preparing')
-    const worker = new Worker('/__narrator/worker.mjs', { type:'module' })
+    const worker = privateTrial() ? trialWorker() : builtWorker()
     this.worker = worker
     worker.onmessage = ({ data }) => {
       if (worker !== this.worker) return
@@ -53,10 +70,27 @@ export class LocalNarratorEngine implements SpeechEngine {
       if (data.ok) p.resolve(data); else p.reject(new Error(data.error))
     }
     worker.onerror = () => {
-      if (worker === this.worker) { const request = this.request; this.dispose(); this.state('error'); request?.onError?.() }
+      if (worker === this.worker) {
+        window.dispatchEvent(new CustomEvent('latte-local-failed', { detail: { code: 'WORKER_FAILED' } }))
+        const request = this.request; this.dispose(); this.state('error'); request?.onError?.()
+      }
     }
-    try { await this.rpc('init'); if (worker !== this.worker) return; this.prepared = true; this.state('ready') }
-    catch { if (worker === this.worker) { this.dispose(); this.state('error') } }
+    try {
+      const init = await this.rpc('init')
+      if (worker !== this.worker) return
+      this.prepared = true
+      // Content-free: which pinned bytes the worker verified before it started,
+      // and nothing about the document.
+      window.dispatchEvent(new CustomEvent('latte-local-ready', { detail: init }))
+      this.state('ready')
+    } catch (error) {
+      if (worker === this.worker) {
+        // A fixed reason code and nothing else: no document text, no filename.
+        window.dispatchEvent(new CustomEvent('latte-local-failed', { detail: { code: String((error as Error)?.message ?? error) } }))
+        this.dispose()
+        this.state('error')
+      }
+    }
   }
   dispose() {
     this.stop(); this.prepared = false; this.worker?.terminate(); this.worker = null
