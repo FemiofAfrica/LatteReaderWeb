@@ -59,9 +59,16 @@ describe('private PCM lifecycle (control mocks, not audible evidence)',()=>{
   const first=String(workers[0].requests[2].text);workers[0].reply(2,pcm());await tick()
   expect(first+workers[0].requests[3].text).toBe(text.trim());expect(first.endsWith(' ')).toBe(true);engine.dispose()
  })
- it('refuses an indivisible word rather than changing its pronunciation by splitting',async()=>{
-  const engine=await ready();const r=request('x'.repeat(200));engine.speak(r);await tick()
+ it('skips an indivisible refused word and keeps reading',async()=>{
+  const engine=await ready();const r=request('x'.repeat(200)+' Next sentence.');engine.speak(r);await tick()
   workers[0].onmessage?.({data:{id:workers[0].requests[1].id,ok:false,error:'TOKEN_LIMIT'}});await tick()
-  expect(workers[0].requests).toHaveLength(2);expect(r.onError).toHaveBeenCalledTimes(1);expect(engine.status).toBe('error');engine.dispose()
+  expect(r.onError).not.toHaveBeenCalled();expect(engine.status).not.toBe('error');engine.dispose()
+ })
+ it('a refused passage never halts the run (stall regression)',async()=>{
+  const engine=await ready();const end=vi.fn();engine.onEnd(end);const r=request('One. Two has 12% growth. Three.');engine.speak(r);await tick()
+  const w=workers[0];let i=1
+  const pump=async()=>{while(i<w.requests.length){const d=w.requests[i++];const bad=String(d.text).includes('%');if(bad&&!String(d.text).includes(' '))w.onmessage?.({data:{id:d.id,ok:false,error:'UNSUPPORTED_TEXT'}});else if(bad)w.onmessage?.({data:{id:d.id,ok:false,error:'UNSUPPORTED_TEXT'}});else w.reply(i-1,pcm());await tick()}}
+  for(let k=0;k<20;k++){await pump();const s=sources.find(x=>x.onended&&!(x as any).done);if(s){(s as any).done=true;s.onended!();await tick()}}
+  expect(r.onError).not.toHaveBeenCalled();expect(engine.status).toBe('ready');expect(end).toHaveBeenCalledTimes(1);expect(engine.stats.skipped).toBeGreaterThan(0);engine.dispose()
  })
 })

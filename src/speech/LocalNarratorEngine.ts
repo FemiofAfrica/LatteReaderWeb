@@ -37,7 +37,7 @@ export class LocalNarratorEngine implements SpeechEngine {
   private prepared = false
   private pumping = false
   status: LocalStatus = 'off'
-  readonly stats = { generated: 0, underruns: 0, maxBufferedSeconds: 0, resumedOffset: 0 }
+  readonly stats = { generated: 0, skipped: 0, underruns: 0, maxBufferedSeconds: 0, resumedOffset: 0 }
   constructor(private changed: (status: LocalStatus) => void) {}
   get available() { return this.prepared }
   onEnd(callback: () => void) { this.ended = callback }
@@ -111,13 +111,20 @@ export class LocalNarratorEngine implements SpeechEngine {
     const midpoint = Math.floor(part.text.length/2)
     const boundaries = [...part.text.matchAll(/\s+/g)].map(m=>m.index!+m[0].length).filter(n=>n>0&&n<part.text.length)
     const mid = boundaries.sort((a,b)=>Math.abs(a-midpoint)-Math.abs(b-midpoint))[0]
-    if (!mid) throw Error('UNSUPPORTED_TEXT')
+    if (!mid) return false
     const chunk = this.request!.chunks![part.chunk]
     const make = (start:number,end:number):LocalPart => {
       const spans=chunk.spans.filter(s=>s.end>start&&s.start<end)
       return {...part,text:chunk.text.slice(start,end),start,end,page:spans[0]?.pageNumber??part.page,pageEnd:spans.at(-1)?.pageNumber??part.pageEnd}
     }
     this.parts.unshift(make(part.start,part.start+mid),make(part.start+mid,part.end))
+    return true
+  }
+  /** A refused part is skipped, never fatal: report its position so the reader's place advances. */
+  private skip(part: LocalPart) {
+    this.stats.skipped++
+    window.dispatchEvent(new CustomEvent('latte-local-skipped', { detail: { chunk: part.chunk, start: part.start, end: part.end } }))
+    if (!this.current && !this.queue.length) { this.request?.onPosition?.(part.chunk, Math.max(part.start, part.end-1), 'utterance'); this.request?.onPage?.(part.pageEnd) }
   }
   private async pump(run: number) {
     if (!this.request || this.pumping || this.busy || run !== this.run) return
@@ -131,13 +138,16 @@ export class LocalNarratorEngine implements SpeechEngine {
         try { result = await this.rpc('generate',{text:part.text,speed:this.request!.rate}) }
         catch (e) {
           if (run !== this.run) return
-          if ((e as Error).message === 'TOKEN_LIMIT') { this.split(part); continue }
+          const code = (e as Error).message
+          if (code === 'CANCELLED') return
+          // TOKEN_LIMIT / UNSUPPORTED_TEXT / INFERENCE_FAILED on one part: halve it, else skip it.
+          if (code === 'TOKEN_LIMIT' || code === 'UNSUPPORTED_TEXT' || code === 'INFERENCE_FAILED' || code === 'INVALID_PCM') { if (!this.split(part)) this.skip(part); continue }
           throw e
         } finally { this.busy = false }
         if (run !== this.run) return
         const pcm = new Float32Array(result.pcm as ArrayBuffer)
-        if (!pcm.length || !pcm.every(Number.isFinite)) throw Error('INVALID_PCM')
-        if (pcm.length/24000 > 15) { this.split(part); continue }
+        if (!pcm.length || !pcm.every(Number.isFinite)) { if (!this.split(part)) this.skip(part); continue }
+        if (pcm.length/24000 > 15) { if (!this.split(part)) this.skip(part); continue }
         const buffer = this.context!.createBuffer(1,pcm.length,24000)
         buffer.copyToChannel(pcm,0)
         this.queue.push({part,buffer}); this.stats.generated++
