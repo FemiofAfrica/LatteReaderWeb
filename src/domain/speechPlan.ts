@@ -1,6 +1,7 @@
 import type { DocumentVoicePlan } from './analysis'
 import type { ReadScope } from './playback'
 import { mappedSpeech, type SourceCharacter } from './readingPosition'
+import { hasUsableText } from './document'
 
 export interface SourceSpan { pageNumber: number; start: number; end: number }
 export interface SpeechChunk { text: string; voiceIndex: number; voiceKey?: string; spans: SourceSpan[]; source?: (SourceCharacter | null)[] }
@@ -16,6 +17,7 @@ export function planSpeechChunks(pages: readonly string[], fromPage: number, sco
   const last = scope === 'document' ? pages.length : fromPage
   for (let pageNumber = fromPage; pageNumber <= last; pageNumber += 1) {
     const pageText = pages[pageNumber - 1] ?? ''
+    if (!hasUsableText(pageText)) continue
     const segments = plan?.segments.filter(s => s.pageNumber === pageNumber)
     const pieces = segments?.length ? segments.map(s => ({ text: s.text,
       voiceIndex: plan?.profiles.find(p => p.id === s.speakerId && p.enabled)?.voiceIndex ?? 0,

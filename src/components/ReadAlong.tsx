@@ -10,15 +10,20 @@ export function ReadAlong({ text, page, position, following, status }: {
     const container = scroller.current
     if (!container) return
     const apply = () => {
-      const bar = document.querySelector('.mobile-bar')
+      const bar = document.querySelector('.mobile-bar') ?? document.querySelector('.transport')
       if (!bar || getComputedStyle(bar).display === 'none') { container.style.removeProperty('max-height'); return }
-      const available = bar.getBoundingClientRect().top - container.getBoundingClientRect().top - 14
-      container.style.maxHeight = `${Math.min(window.innerHeight / 2, Math.max(100, available))}px`
+      const frame = container.parentElement
+      const frameStyle = frame ? getComputedStyle(frame) : null
+      const inset = frameStyle ? parseFloat(frameStyle.paddingBottom) + parseFloat(frameStyle.borderBottomWidth) : 0
+      const available = bar.getBoundingClientRect().top - container.getBoundingClientRect().top - inset - 1
+      // Include transcript padding in the bound; never force a 100px minimum beneath pinned chrome.
+      container.style.boxSizing = 'border-box'
+      container.style.maxHeight = `${Math.min(window.innerHeight / 2, Math.max(0, available))}px`
     }
     apply()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(apply)
     if (container.parentElement?.parentElement) observer?.observe(container.parentElement.parentElement)
-    const bar = document.querySelector('.mobile-bar'); if (bar) observer?.observe(bar)
+    const bar = document.querySelector('.mobile-bar') ?? document.querySelector('.transport'); if (bar) observer?.observe(bar)
     window.addEventListener('resize', apply)
     return () => { observer?.disconnect(); window.removeEventListener('resize', apply) }
   }, [page, status, following])

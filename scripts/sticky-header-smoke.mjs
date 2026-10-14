@@ -237,6 +237,10 @@ for (const viewport of MOBILE) {
   }
 
   // 3. Pinned and opaque while the content moves behind it.
+  // Keep the pointer away from native number-input hover spinners in pixel comparisons.
+  await page.mouse.move(0, 0)
+  // Native spinner hover painting is asynchronous; make that UA affordance stable in this pixel-only probe.
+  await page.addStyleTag({ content: 'input[type=number]::-webkit-inner-spin-button { opacity: 1; }' })
   const band = Math.round(edges.bandBottom)
   await scrollTo(page, Math.round(rest.maxScroll / 2))
   const mid = await chrome(page)

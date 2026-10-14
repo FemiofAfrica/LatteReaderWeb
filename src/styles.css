@@ -159,6 +159,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .voice-choice select { width: 100%; min-width: 0; min-height: 36px; color: var(--butter); background: var(--espresso); border: 1px solid var(--muted); border-radius: 4px; font: inherit; }
 .voice-choice small { white-space: normal; }
 .voice-status { margin-block: 4px; }
+.restore-default { min-height: 44px; width: 100%; text-transform: none; font-size: 11px; }
 .speaker-list li .voice-choice { grid-column: 1 / -1; }
 .speaker-list > p { margin: 10px 0 5px; color: var(--butter); font: 500 10px DM Mono, monospace; }
 .speaker-list ul { margin: 0; padding: 0; list-style: none; }
@@ -476,6 +477,25 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .reading-progress > button { width: 44px; height: 44px; flex: 0 0 44px; border: 1px solid var(--crema); border-radius: 8px; background: var(--bean); color: var(--foam); font-size: 26px; }
 .reading-progress label { flex: 1; min-width: 0; color: var(--foam); font-size: 11px; }
 .reading-progress input { display: block; width: 100%; height: 30px; margin: 0; accent-color: var(--butter); }
+/* A compact persistent status remains visible on every mobile panel. */
+.reading-progress-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; }
+.mobile-reading-status { color: var(--butter); font: 500 11px/1.3 DM Mono, monospace; }
+.progress-label-short { display: none; }
+@media (max-height: 600px) {
+  .progress-label-full { display: none; }
+  .progress-label-short { display: inline; }
+}
+@media (max-width: 780px), (max-height: 600px) {
+  .reading-progress input { height: 44px; }
+  .page-text-disclosure > summary, .diagnostics-panel summary,
+  .document-details summary, .engine-details summary { min-height: 44px; box-sizing: border-box; padding-block: 12px; }
+  .read-along-toggle, .diagnostics-controls button { min-height: 44px; }
+  .mobile-tabs button, .fit-width-button, .key-button, .delete-button { text-transform: none; }
+  .mobile-bar { gap: 4px 8px; }
+}
+@media (forced-colors: active) {
+  :focus-visible { outline-color: Highlight !important; }
+}
 .read-along-toggle { display: block; margin-bottom: 12px; }
 .read-along { max-width: 800px; margin-inline: auto; }
 .transcript-frame { padding: 12px; border: 1px solid var(--crema); border-radius: 10px; }

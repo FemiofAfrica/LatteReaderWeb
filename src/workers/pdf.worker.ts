@@ -5,6 +5,7 @@ import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import type { TextItem } from 'pdfjs-dist/types/src/display/api'
 import { normalizeExtractedText } from '../domain/textQuality'
 import { joinPdfTextItems } from '../domain/pdfText'
+import { hasUsableText, type ExtractionMessage } from '../domain/document'
 
 // PDF.js's automatic worker setup reads window.location, which does not
 // exist in this extraction worker. Supply a real nested worker explicitly
@@ -15,13 +16,7 @@ GlobalWorkerOptions.workerPort = new Worker(
 )
 
 type Request = { type: 'extract'; bytes: ArrayBuffer }
-type Response =
-  | { type: 'metadata'; pageCount: number }
-  | { type: 'page'; pageNumber: number; text: string; characterCount: number; unmapped: number }
-  | { type: 'complete'; characterCount: number; scanned: boolean }
-  | { type: 'error'; message: string }
-
-const send = (message: Response) => self.postMessage(message)
+const send = (message: ExtractionMessage) => self.postMessage(message)
 
 self.onmessage = async (event: MessageEvent<Request>) => {
   if (event.data.type !== 'extract') return
@@ -36,18 +31,18 @@ self.onmessage = async (event: MessageEvent<Request>) => {
       const text = joinPdfTextItems(content.items.filter((item): item is TextItem => 'str' in item))
       const normalized = normalizeExtractedText(text)
       characterCount += normalized.text.length
-      if (text.length >= 20) pagesWithText += 1
+      if (hasUsableText(normalized.text)) pagesWithText += 1
       send({ type: 'page', pageNumber, text: normalized.text, characterCount, unmapped: normalized.unmapped })
       page.cleanup()
     }
-    const sampledPages = Math.min(document.numPages, 5)
     send({
       type: 'complete',
       characterCount,
-      scanned: sampledPages > 0 && pagesWithText === 0,
+      pagesWithReadableText: pagesWithText,
+      pagesWithoutReadableText: document.numPages - pagesWithText,
     })
     await document.cleanup()
   } catch {
-    send({ type: 'error', message: 'Could not extract text from this PDF. Try opening it again.' })
+    send({ type: 'error', errorCode: 'extract-pdf' })
   }
 }

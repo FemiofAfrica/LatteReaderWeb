@@ -28,7 +28,7 @@ describe('playbackReducer', () => {
     expect(started).toMatchObject({ status: 'playing', scope: 'page' })
     expect(paused.status).toBe('paused')
     expect(resumed.status).toBe('playing')
-    expect(stopped).toEqual(initialPlaybackState)
+    expect(stopped).toMatchObject({ status: 'ready', display: 'Stopped' })
   })
 
   it('records engine completion without losing the chosen scope', () => {
@@ -107,9 +107,9 @@ describe('continuous reading sequence', () => {
     const advanced = playbackReducer(started, { type: 'ADVANCE', page: 3, totalPages: 4 })
     const stopped = playbackReducer(advanced, { type: 'STOP' })
 
-    expect(stopped).toEqual(initialPlaybackState)
+    expect(stopped).toMatchObject({ status: 'ready', display: 'Stopped' })
     expect(stopped.status).toBe('ready')
-    expect(stopped.page).toBe(0)
+    expect(stopped.page).toBe(3)
     // The cancelled run cannot request another page, so no queued utterance survives stop.
     expect(nextReadingPage(pages, stopped)).toBeNull()
   })

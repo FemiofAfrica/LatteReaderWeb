@@ -35,7 +35,16 @@ it('chooses the same automatic voice when a same-language list is reordered', ()
 })
 it('uses a matching language and never arbitrary unrelated character voices', () => {
   const french = voice('French', 'fr-FR'), english = voice('English')
-  expect(resolveVoice([french, english], undefined, 'en-GB').voice).toBe(english)
+  expect(resolveVoice([french, english], undefined, 'en-GB').voice).toBeNull()
   expect(resolveVoice([french], undefined, 'en-GB').voice).toBeNull()
   expect(resolveVoice([], undefined, 'en-US')).toEqual({ voice: null, fallback: false, language: 'en-US' })
+})
+
+it('restores the actual default English voice ahead of alphabetic or locale sorting', () => {
+  const unusual = voice('A unusual', 'en-US')
+  const actual = { ...voice('Z natural', 'en-GB'), default: true } as SpeechSynthesisVoice
+  const otherDefault = { ...voice('French default', 'fr-FR'), default: true } as SpeechSynthesisVoice
+  expect(resolveVoice([unusual, otherDefault, actual], undefined, 'en-US').voice).toBe(actual)
+  expect(resolveVoice([actual, unusual], undefined, 'fr-FR').voice).toBe(actual)
+  expect(resolveVoice([unusual, otherDefault], undefined, 'en-US').voice).toBeNull()
 })

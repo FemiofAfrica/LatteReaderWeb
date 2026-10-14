@@ -10,6 +10,11 @@ export function selectedVoiceLanguage(key: string | undefined, fallback: string)
 }
 export interface VoiceChoice { voice: SpeechSynthesisVoice | null; fallback: boolean; language: string }
 export function resolveVoice(voices: readonly SpeechSynthesisVoice[], key: string | undefined, language: string): VoiceChoice {
+  if (!key) {
+    // Browser default means the actual default English voice, not the first sorted name.
+    const voice = voices.find(v => v.default && /^en(?:-|$)/i.test(v.lang ?? '')) ?? null
+    return { voice, fallback: false, language: voice?.lang || (/^en(?:-|$)/i.test(language) ? language : 'en-US') }
+  }
   const selected = key ? voices.find(v => voiceKey(v) === key) : undefined
   if (selected) return { voice: selected, fallback: false, language: selected.lang || language }
   language = selectedVoiceLanguage(key, language)

@@ -1,14 +1,19 @@
+import { hasUsableText } from './document'
+
 export type PlaybackStatus = 'ready' | 'playing' | 'paused'
 export type ReadScope = 'selection' | 'page' | 'document'
 
 export interface PlaybackState {
   status: PlaybackStatus
+  waiting?: boolean
+  display?: 'Ready' | 'Reading' | 'Paused' | 'Stopped' | 'Finished' | 'Waiting for text' | 'Voice unavailable' | 'Reading error'
   scope: ReadScope
   page: number
   message: string
 }
 
 export type PlaybackAction =
+  | { type: 'RESET' }
   | { type: 'PLAY'; scope: ReadScope; page?: number }
   | { type: 'WAIT'; scope: ReadScope; page: number }
   | { type: 'ADVANCE'; page: number; totalPages: number }
@@ -17,13 +22,14 @@ export type PlaybackAction =
   | { type: 'RESUME' }
   | { type: 'STOP' }
   | { type: 'END' }
-  | { type: 'FAIL'; message: string }
+  | { type: 'FAIL'; message: string; display?: 'Voice unavailable' | 'Reading error' }
 
 export const initialPlaybackState: PlaybackState = {
   status: 'ready',
   scope: 'document',
   page: 0,
   message: 'Ready to read',
+  display: 'Ready',
 }
 
 function scopeMessage(scope: ReadScope): string {
@@ -34,15 +40,16 @@ function scopeMessage(scope: ReadScope): string {
 
 export function playbackReducer(state: PlaybackState, action: PlaybackAction): PlaybackState {
   switch (action.type) {
-    case 'PLAY': return { status: 'playing', scope: action.scope, page: action.page ?? state.page, message: scopeMessage(action.scope) }
-    case 'WAIT': return { status: 'playing', scope: action.scope, page: action.page, message: 'Waiting for text extraction before continuous reading' }
-    case 'ADVANCE': return { ...state, status: 'playing', page: action.page, message: `Reading page ${action.page} of ${action.totalPages}` }
+    case 'PLAY': return { status: 'playing', display: 'Reading', scope: action.scope, page: action.page ?? state.page, message: scopeMessage(action.scope) }
+    case 'RESET': return initialPlaybackState
+    case 'WAIT': return { status: 'playing', waiting: true, display: 'Waiting for text', scope: action.scope, page: action.page, message: 'Waiting for text extraction before continuous reading' }
+    case 'ADVANCE': return { ...state, status: 'playing', display: 'Reading', page: action.page, message: `Reading page ${action.page} of ${action.totalPages}` }
     case 'SEEK': return { ...state, page: action.page, message: `${state.status === 'paused' ? 'Paused' : state.status === 'playing' ? 'Reading' : 'Ready'} on page ${action.page}` }
-    case 'PAUSE': return { ...state, status: 'paused', message: 'Playback paused' }
-    case 'RESUME': return { ...state, status: 'playing', message: scopeMessage(state.scope) }
-    case 'END': return { ...state, status: 'ready', page: 0, message: state.scope === 'document' ? 'Finished the document' : 'Reading complete' }
-    case 'FAIL': return { ...state, status: 'ready', message: action.message }
-    case 'STOP': return initialPlaybackState
+    case 'PAUSE': return { ...state, status: 'paused', display: 'Paused', message: 'Playback paused' }
+    case 'RESUME': return { ...state, status: 'playing', display: state.waiting ? 'Waiting for text' : 'Reading', message: scopeMessage(state.scope) }
+    case 'END': return { ...state, status: 'ready', display: 'Finished', page: 0, message: state.scope === 'document' ? 'Finished the document' : 'Reading complete' }
+    case 'FAIL': return { ...state, status: 'ready', display: action.display ?? 'Reading error', message: action.message }
+    case 'STOP': return { ...state, status: 'ready', display: 'Stopped', message: 'Reading stopped' }
   }
 }
 
@@ -52,7 +59,7 @@ export interface ReadingStep {
 }
 
 export function hasReadableText(value: string | undefined): boolean {
-  return typeof value === 'string' && value.trim().length > 0
+  return typeof value === 'string' && hasUsableText(value)
 }
 
 /**

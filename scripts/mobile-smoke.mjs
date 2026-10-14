@@ -30,7 +30,7 @@ await page.addInitScript(() => {
     speak(utterance) {
       window.__spoken = (window.__spoken ?? 0) + 1
       window.__utterances.push(utterance.text)
-      window.setTimeout(() => { if (utterance.onend) utterance.onend() }, 60)
+      if (!window.__holdSpeech) window.setTimeout(() => { if (utterance.onend) utterance.onend() }, 60)
     },
   }
   window.__spoken = 0
@@ -187,12 +187,14 @@ await page.evaluate(() => {
   selection.addRange(range)
 })
 const spokenBeforeSelection = await page.evaluate(() => window.__spoken)
+// Hold this short selection until Stop, rather than racing its 60ms mock completion.
+await page.evaluate(() => { window.__holdSpeech = true })
 await playButton().click()
 await page.waitForFunction((before) => (window.__spoken ?? 0) > before, spokenBeforeSelection, { timeout: 10000 })
 const selectionRead = await page.evaluate(() => window.__utterances.at(-1))
 check(selectionRead.length < 40 && !selectionRead.includes('ALICE'), `Selection reading read more than the selection: "${selectionRead}"`)
 await stopButton().click()
-await page.evaluate(() => window.getSelection().removeAllRanges())
+await page.evaluate(() => { window.__holdSpeech = false; window.getSelection().removeAllRanges() })
 await textSummary().click()
 
 // 6. No horizontal overflow at the phone width.
