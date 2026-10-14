@@ -74,7 +74,7 @@ await page.screenshot({ path: path.join(root, 'tests/artifacts/mobile-panel-prev
 // preview, labelled with one plain line, and bounded while open.
 check(await textPanel().count() === 1, 'The selectable text disclosure is missing')
 check(await textPanel().evaluate((node) => !node.hasAttribute('open')), 'The selectable text panel is open by default')
-check((await textSummary().innerText()).trim() === 'Select text to read only that part', `The disclosure label reads "${(await textSummary().innerText()).trim()}"`)
+check((await textSummary().innerText()).trim() === 'Select text to read it', `The disclosure label reads "${(await textSummary().innerText()).trim()}"`)
 const previewOrder = await page.evaluate(() => {
   const canvas = document.querySelector('.page-stage canvas').getBoundingClientRect()
   const panel = document.querySelector('.page-text-disclosure').getBoundingClientRect()

@@ -40,6 +40,6 @@ export function ReadAlong({ text, page, position, following, status }: {
   })
   return <section className="read-along" aria-label="Read-along transcript">
     <p className="panel-copy">Extracted text, not a PDF overlay. {status === 'ready' ? 'Play to follow sentences when this voice provides boundary events.' : status === 'paused' ? position?.ranges.length ? 'Paused at this sentence.' : 'Paused. This voice has not reported a sentence position.' : position?.evidence === 'boundary' ? 'Sentence follows voice boundary events.' : 'Waiting for voice boundaries. Position updates at utterance starts and ends only.'}</p>
-    <div className="transcript-frame"><div className="read-along-text page-text" ref={scroller} tabIndex={0}><p>{parts}{text.slice(cursor)}</p></div></div>
+    <div className="transcript-frame"><div className="read-along-text page-text" data-source-page={page} ref={scroller} tabIndex={0}><p>{parts}{text.slice(cursor)}</p></div></div>
   </section>
 }

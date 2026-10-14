@@ -10,6 +10,9 @@
 - Continuous reading requested before extraction completes waits for extraction (up to 15 seconds) instead of truncating the sentence at the last available page. Pause holds that pending run; manual navigation/Stop cancels it. Timeout/error leaves the displayed position intact and asks the reader to retry once extraction is ready. Page-only and selection reads do not wait for the whole document.
 - Explicit Unicode soft-hyphen wraps are removed, including between pages. Hard hyphens are retained: there is no dictionary guess about whether a wrap is lexical. Known presentation ligatures are expanded explicitly; blanket NFKC is not applied.
 - Stored PDFs are re-extracted on restore. Saved voice plans are reanalyzed from the new extraction before use, so old segment text cannot bypass the current normalization. Storage remains one current PDF.
+- Selecting text inside the selectable page text or the read-along transcript offers two explicit actions, never one silent behaviour: **Read selection only** reads that passage alone, and **Read from selection** continues through the rest of the document. The selection is never fed as one utterance: both actions reuse the existing bounded, voiced chunk plan and slice it by source provenance.
+- Selection offsets come from the DOM `Range` measured against the container that carries `data-source-page`, never from searching the selected string. A repeated sentence therefore keeps its own occurrence, text split by highlight elements still resolves, and both range ends must sit in the same source container.
+- Play keeps its approved meaning. A live selection still makes Play read only the selection, and no scope or semantics change depends on a review suggestion.
 
 ## Missing-f investigation
 
@@ -27,6 +30,34 @@ broken:  f ff fi fl ffi ffl \u0000 fi fl ffi ffl “fine” Five fine friends
 PDF.js already expands these correctly mapped ligatures. The failure therefore exists upstream of application speech, in the deliberately damaged mapping. Public `getTextContent()` exposes decoded strings, font names/styles and positions, not a reliable original-glyph-to-language recovery for this NUL. Font-family information alone cannot tell whether an unknown glyph was f, ff, fi or something unrelated. No blind replacement was implemented.
 
 The application now detects NUL/replacement characters, retains an explicit replacement marker and warns in Read that letters could not be extracted. Reliable recovery of damaged source mappings still requires a corrected text export, source-specific font analysis or local OCR (not implemented). The user's private PDF was not accessed; its exact mapping defect is **not proven** by this representative fixture.
+
+### The native Mac implementation does not repair text
+
+The native repository (`FemiofAfrica/PDFReaderSpeaker`, cloned and read at `d833b4a`) has no dictionary fill, spell-checker, NLP tagger or ligature repair. `PDFDocumentReader.swift` takes `page.string` and passes it to a whitespace normaliser (`normalisedForSpeech`) that only splits on whitespace/newlines and rejoins with single spaces; `MultiVoiceReading.chunk(text:)` splits on `.`/`!`/`?` for utterance sizing. Neither inspects glyphs, consults a dictionary, or names an unmapped character. The claimed Mac dictionary repair is **not present in the native source**, so it was not ported.
+
+### What the damaged mapping can and cannot prove
+
+`tests/fixtures/inspect_font_mapping.py` (`npm run test:extraction-quality`) reads the owned fixtures' own font data, still without a user PDF:
+
+```text
+changedToUnicodeCodes: [1]   healthy: <01> -> FB00 (ff)   damaged: <01> -> 0000
+fontGlyphCode1: 1   cmapFormat: 6   postFormatHasGlyphNames: False   numGlyphs: 105
+```
+
+The deliberately damaged file changes exactly one `beginbfchar` entry, the one that named the ff ligature, to `<0000>`. The embedded subset font still draws the same glyph (code 1 maps to glyph index 1), but that font's own `cmap` maps character code to glyph index only, and its `post` table is format 3 (no glyph names). The font file therefore does not name the character on its own: the ToUnicode CMap is the only decoded-glyph claim in the file, and it is the part that is broken.
+
+Consequence: a NUL in extraction is **unrepairable from the PDF alone** for the general case. A defensible recovery would need a correctly mapped occurrence of the same font and code elsewhere in the document, which cannot be assumed and is not implemented. The honest behaviour is the existing warning plus the replacement marker, not a guessed `f`/`ff`/`fi`.
+
+### What is repaired, and why it is safe
+
+Two conservative repairs are in scope because they are provable from the text itself:
+
+- Known presentation ligatures (`ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ`) expand to their exact letters, with UTF-16 source positions preserved for each expanded character.
+- A **token-internal** split apostrophe is rejoined only when the stem is already an explicit English contraction (`don’ t`, `isn’ t`, `I' m`, `we' re`, …). The whitespace is removed from the mapped string and every surviving character keeps its original source offset.
+
+Deliberately not repaired, with false-positive cases asserted in `src/domain/selection.test.ts`: a spaced quote (`don ' t`), a possessive (`John' s`), a spaced contraction (`don ' t` with spaces on both sides), and every non-English form (`l’ amour`, `aujourd’ hui`). Genuine word spaces are never removed, and no unknown glyph is ever substituted.
+
+An opt-in, previewable dictionary heuristic is **not implemented**; if wanted it should be a separate explicit proposal with confidence display and full revert.
 
 ## Exact speech evidence
 
@@ -46,6 +77,7 @@ This is evidence of API input and control behavior, **not audible output**. Brow
 - Unit tests assert exact speech text, source spans, blank pages, sentence endings, bounded chunks, dialogue voice changes, ligatures, unmapped characters, selection, pause/resume, Stop and errors.
 - Browser suites cover upload/render/navigation, restore and one-slot deletion, compatibility in page/nested workers, responsive fit/manual override, selection disclosure, opaque pinned chrome, diagnostics privacy/transport and upload failure preservation.
 - `LATTE_READER_URL=http://127.0.0.1:4188/ npm run test:reading` creates screenshots at 360/390/504/768/1440 and `tests/artifacts/reading-quality/evidence.json`. Artifact files are local and ignored by Git.
+- `LATTE_READER_URL=http://127.0.0.1:4198/ npm run test:selection` uploads the owned `selection-quality.pdf` at 390 and 1440, selects the second of two identical sentences across highlight-split DOM nodes, and asserts the exact synthesis inputs for both actions. It also proves a long selection-only read stays bounded, a continuation reaches the final page, a paused seek stays silent until Resume, and the highlight source offset equals the selected sentence's own occurrence (`tests/artifacts/selection/proof.json`).
 - Diagnostics verification uses a separate fresh source copy and loopback preview/log, not the tester's running diagnostics log. Production transport remains disabled. No document upload/OCR service or raw-text diagnostic event was added.
 
 Local review only. Do not push `main` until parent review: it auto-deploys.

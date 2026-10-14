@@ -22,6 +22,7 @@ import {
 import { planSpeechChunks, type SpeechChunk } from './domain/speechPlan'
 import { readingTimeline, seekChunks, sentencePosition, sentenceSkip, type ReadingPosition } from './domain/readingPosition'
 import { ReadAlong } from './components/ReadAlong'
+import { sourceSelection, selectionChunks, type SourceSelection } from './domain/selection'
 import { ReadingProgress } from './components/ReadingProgress'
 import { BrowserSpeechEngine } from './speech/SpeechEngine'
 import { recordEvent } from './diagnostics/diagnostics'
@@ -49,13 +50,6 @@ const MOBILE_PANELS: { id: MobilePanel; label: string; paths: string[] }[] = [
   { id: 'voices', label: 'Voices', paths: ['M12 3a3.5 3.5 0 013.5 3.5v4a3.5 3.5 0 01-7 0v-4A3.5 3.5 0 0112 3z', 'M5.5 11a6.5 6.5 0 0013 0'] },
 ]
 
-function selectionText(): string {
-  const selection = window.getSelection()
-  const parent = selection?.anchorNode instanceof Element
-    ? selection.anchorNode
-    : selection?.anchorNode?.parentElement
-  return parent?.closest('.page-text') ? selection?.toString().trim() ?? '' : ''
-}
 
 function useMediaQuery(query: string): boolean {
   const read = () => typeof window !== 'undefined'
@@ -108,6 +102,13 @@ function App() {
   const [currentPage, setCurrentPage] = useState(1)
   const [spokenPage, setSpokenPage] = useState(0)
   const [readAlong, setReadAlong] = useState(false)
+  const [selectedRange, setSelectedRange] = useState<SourceSelection | null>(null)
+  useEffect(() => {
+    setSelectedRange(null)
+    const update = () => setSelectedRange(sourceSelection(window.getSelection()))
+    document.addEventListener('selectionchange', update)
+    return () => document.removeEventListener('selectionchange', update)
+  }, [currentPage, documentState?.id, readAlong])
   const [position, setPosition] = useState<ReadingPosition | null>(null)
   const [readingOffset, setReadingOffset] = useState(0)
   const [sessionChunks, setSessionChunks] = useState<SpeechChunk[] | null>(null)
@@ -527,14 +528,10 @@ function App() {
     setFollowing(true)
     setSpokenPage(currentPage)
 
-    // Selection reading keeps its own path and reads only the selection.
-    const selected = fromVisiblePage ? '' : selectionText()
+    // Play retains selection-only semantics. Continuation has its own explicit action.
+    const selected = fromVisiblePage ? null : sourceSelection(window.getSelection())
     if (selected) {
-      setSessionChunks(null); sessionRef.current = null; setReadingOffset(0)
-      runRef.current.pages = 1
-      readingPageRef.current = currentPage
-      dispatchPlayback({ type: 'PLAY', scope: 'selection', page: currentPage })
-      speechRef.current.speak({ text: selected, rate: speedRef.current, onError: () => dispatchPlayback({ type: 'FAIL', message: 'Voice stopped. Play to retry from this page.' }) })
+      readSelected(selected, false)
       return
     }
 
@@ -565,6 +562,23 @@ function App() {
       waitTimerRef.current = window.setTimeout(tick, PENDING_TEXT_POLL_MS)
     } else start()
   }
+
+  const readSelected = (selected: SourceSelection, toEnd: boolean) => {
+    if (!documentState || selected.pageNumber !== currentPage || !speechRef.current.available) return
+    if (toEnd && documentState.extraction !== 'complete') return
+    const chunks = selectionChunks(planSpeechChunks(documentState.pages, selected.pageNumber,
+      toEnd ? 'document' : 'page', voicePlanRef.current), selected, toEnd)
+    if (!chunks.length) return
+    clearWait(); speechRef.current.stop(); pendingSeekRef.current = null; setPosition(null)
+    followingRef.current = true; setFollowing(true)
+    const scope = toEnd ? 'document' : 'selection'
+    sessionRef.current = chunks; sessionScopeRef.current = scope; setSessionChunks(chunks); setReadingOffset(0)
+    launchReading(chunks, 0, scope)
+  }
+  const selectionActions = <div className="selection-actions" role="group" aria-label="Selected text reading">
+    <button type="button" className="secondary-button" disabled={!selectedRange || selectedRange.pageNumber !== currentPage || !speechRef.current.available} onClick={() => selectedRange && readSelected(selectedRange, false)}>Read selection only</button>
+    <button type="button" className="secondary-button" disabled={!selectedRange || selectedRange.pageNumber !== currentPage || documentState?.extraction !== 'complete' || !speechRef.current.available} onClick={() => selectedRange && readSelected(selectedRange, true)}>Read from selection</button>
+  </div>
 
   const stop = () => {
     clearWait()
@@ -765,9 +779,11 @@ function App() {
                   {readAlong ? <ReadAlong text={currentText} page={currentPage} position={position} following={following} status={playback.status} />
                     : pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={renderZoom} onNavigate={navigate} /> : <p>Loading preview...</p>}
                   {documentState.unmapped > 0 && <p className="warning-copy" role="alert">Some letters could not be extracted from this PDF. Reading may omit them. Try a text-exported PDF; local OCR is not available yet.</p>}
+                  {readAlong && selectionActions}
                   <details className="page-text-disclosure">
-                    <summary>Select text to read only that part</summary>
-                    <div className="page-text" aria-label={`Selectable text from page ${currentPage}`} tabIndex={0}>
+                    <summary>Select text to read it</summary>
+                    {!readAlong && selectionActions}
+                    <div className="page-text" data-source-page={currentPage} aria-label={`Selectable text from page ${currentPage}`} tabIndex={0}>
                       <p>{currentText || (documentState.extraction === 'complete' ? 'No readable text was found on this page.' : 'Extracting text...')}</p>
                     </div>
                   </details>

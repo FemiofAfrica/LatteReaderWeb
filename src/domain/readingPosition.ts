@@ -1,4 +1,4 @@
-import { normalizeExtractedText } from './textQuality'
+import { normalizeMappedText } from './textQuality'
 import type { SpeechChunk } from './speechPlan'
 
 export interface SourceCharacter { pageNumber: number; start: number; end: number }
@@ -11,18 +11,19 @@ export interface ReadingPosition {
 /** UTF-16 source mapping, including expanded ligatures and collapsed whitespace.
  * Never search for a word at callback time: repeated text retains its own provenance. */
 export function mappedSpeech(text: string, pageNumber: number, base = 0) {
+  const repaired = normalizeMappedText(text)
   let value = ''
   const source: SourceCharacter[] = []
-  for (let i = 0; i < text.length;) {
+  for (let i = 0; i < repaired.text.length;) {
     const start = i
-    if (text[i] === '\u00ad') { i++; while (/\s/.test(text[i] ?? '') && i < text.length) i++; continue }
+    if (repaired.text[i] === '\u00ad') { i++; while (i < repaired.text.length && /\s/.test(repaired.text[i])) i++; continue }
     let normalized: string
-    if (/\s/.test(text[i])) {
-      while (i < text.length && /\s/.test(text[i])) i++
+    if (/\s/.test(repaired.text[i])) {
+      while (i < repaired.text.length && /\s/.test(repaired.text[i])) i++
       normalized = ' '
-    } else { normalized = normalizeExtractedText(text[i++]).text }
+    } else { normalized = repaired.text[i++] }
     value += normalized
-    for (let j = 0; j < normalized.length; j++) source.push({ pageNumber, start: base + start, end: base + i })
+    for (let j = 0; j < normalized.length; j++) source.push({ pageNumber, start: base + repaired.source[start].start, end: base + repaired.source[i - 1].end })
   }
   const left = value.length - value.trimStart().length
   const right = value.trimEnd().length

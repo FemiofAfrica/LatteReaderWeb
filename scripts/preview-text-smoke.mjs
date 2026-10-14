@@ -56,7 +56,7 @@ for (const viewport of VIEWPORTS) {
   const summary = disclosure.locator('summary')
   check(await disclosure.count() === 1, `${viewport.label}: selectable text disclosure is missing`)
   check(await disclosure.evaluate((node) => !node.hasAttribute('open')), `${viewport.label}: transcript panel is open by default`)
-  check((await summary.innerText()).trim() === 'Select text to read only that part', `${viewport.label}: disclosure says "${(await summary.innerText()).trim()}"`)
+  check((await summary.innerText()).trim() === 'Select text to read it', `${viewport.label}: disclosure says "${(await summary.innerText()).trim()}"`)
 
   const collapsed = await page.evaluate(() => {
     const details = document.querySelector('.page-text-disclosure').getBoundingClientRect()

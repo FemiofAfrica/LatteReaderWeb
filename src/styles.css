@@ -181,6 +181,8 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .page-text { max-height: 50vh; overflow: auto; padding: 0 16px 16px; scrollbar-color: var(--crema) transparent; }
 .page-text p { margin: 0; color: var(--foam); font: 400 13px/1.7 Georgia, serif; white-space: pre-wrap; }
 .page-text ::selection, .page-text::selection { background: var(--caramel); color: var(--espresso); }
+.selection-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px; }
+.selection-actions button { min-height: 44px; }
 
 .transport { min-height: 90px; display: grid; grid-template-columns: auto minmax(120px,1fr) 150px 110px 110px; align-items: center; gap: 16px; padding: 12px 20px; border-top: 1px solid var(--border); }
 .transport-buttons { display: flex; align-items: center; gap: 8px; }
