@@ -2,8 +2,15 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { privateDiagnosticsPlugin } from './scripts/privateDiagnosticsPlugin'
 
+// Diagnostics (problem-report panel, event buffer, private ingestion) exist only
+// in private tester builds (LATTE_PRIVATE_DIAGNOSTICS=1) and under the test
+// runner. The public build compiles them out entirely.
+const privateDiagnostics = process.env.LATTE_PRIVATE_DIAGNOSTICS === '1'
+const diagnosticsCompiled = privateDiagnostics || Boolean(process.env.VITEST)
+
 export default defineConfig({
-  plugins: [react(), privateDiagnosticsPlugin(process.env.LATTE_PRIVATE_DIAGNOSTICS === '1')],
+  plugins: [react(), privateDiagnosticsPlugin(privateDiagnostics)],
+  define: { __LATTE_DIAGNOSTICS__: JSON.stringify(diagnosticsCompiled) },
   server: { host: '127.0.0.1' },
   preview: { host: '127.0.0.1' },
   // Isolated private verification must not overwrite a tester's active dist.

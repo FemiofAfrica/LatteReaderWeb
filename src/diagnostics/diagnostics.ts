@@ -46,6 +46,7 @@ let batchAttempts = 0
 let droppedBatches = 0
 let sawSuccess = false
 export function transportEnabled() {
+  if (!__LATTE_DIAGNOSTICS__) return false
   return ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname) &&
     document.querySelector('meta[name="latte-private-diagnostics"]')?.getAttribute('content') === 'enabled'
 }
@@ -71,6 +72,7 @@ function reasonToErrorCode(value: TransportReason): ErrorCode {
 function notify() { revision++; listeners.forEach(fn => fn()) }
 // Transport lifecycle events are edge-triggered, never per-attempt, so they cannot flood retention.
 function emitTransport(event: 'transport.fail' | 'transport.recover', errorCode?: ErrorCode) {
+  if (!__LATTE_DIAGNOSTICS__) return
   const entry: DiagnosticEvent = {
     timestamp: new Date().toISOString(), sessionId, version: APP_VERSION, event,
     severity: event === 'transport.fail' ? 'error' : 'info',
@@ -127,6 +129,8 @@ async function flush() {
   }
 }
 export function recordEvent(event: EventName, details: Partial<Pick<DiagnosticEvent, 'page' | 'count' | 'durationMs' | 'zoom' | 'errorCode'>> = {}) {
+  // Public build: diagnostics are compiled out, so nothing is buffered or sent.
+  if (!__LATTE_DIAGNOSTICS__) return
   const entry: DiagnosticEvent = {
     timestamp: new Date().toISOString(), sessionId, version: APP_VERSION, event,
     severity: /fail$|error$|rejection$/.test(event) ? 'error' : 'info',
@@ -160,6 +164,7 @@ export const diagnostics = {
   },
 }
 export function installGlobalDiagnostics() {
+  if (!__LATTE_DIAGNOSTICS__) return
   window.addEventListener('error', e => recordEvent('window.error', { errorCode: classifyError(e.error) }))
   window.addEventListener('unhandledrejection', e => recordEvent('window.rejection', { errorCode: classifyError(e.reason) }))
   recordEvent('session.start')

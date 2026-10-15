@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os'
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -10,7 +11,7 @@ import type { ViteDevServer } from 'vite'
 
 describe('private ingestion retention and rejection diagnostics', () => {
   it('protects lifecycle history from progress flooding and records content-free rejections', async () => {
-    const directory = mkdtempSync(join(process.env.TMPDIR ?? '/root/.hermes/cache/scratch', 'latte-diagnostics-'))
+    const directory = mkdtempSync(join(tmpdir(), 'latte-diagnostics-'))
     const old = process.cwd()
     process.chdir(directory)
     const plugin = privateDiagnosticsPlugin(true)
@@ -111,7 +112,7 @@ describe('private ingestion retention and rejection diagnostics', () => {
 
 describe('private ingestion is idempotent', () => {
   it('does not store a retried batch twice', async () => {
-    const directory = mkdtempSync(join(process.env.TMPDIR ?? '/root/.hermes/cache/scratch', 'latte-idempotent-'))
+    const directory = mkdtempSync(join(tmpdir(), 'latte-idempotent-'))
     const old = process.cwd()
     process.chdir(directory)
     const plugin = privateDiagnosticsPlugin(true)
