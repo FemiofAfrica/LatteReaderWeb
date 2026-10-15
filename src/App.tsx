@@ -763,6 +763,7 @@ function App() {
             </div>
             <button className="primary-button" onClick={openPicker} disabled={isRestoring}>Open a PDF</button>
             <p className="privacy-note">Your PDF stays in this browser and returns when you reopen the app. A new PDF replaces it. Your PDF is never uploaded.</p>
+            <p className="credit-note"><a href="https://iririlabs.com/work/lattereader">Built by IRIRI Labs</a></p>
             {uploadError.includes('could not be restored') && <button className="delete-button compact-delete" onClick={() => { if (window.confirm('Delete the saved PDF and all reader data from this browser?')) void deleteLocalData() }}>Delete saved PDF</button>}
             {uploadFailure?.code === 'document-open' && <button className="primary-button" onClick={openPicker}>Open the file again</button>}
           </section>
