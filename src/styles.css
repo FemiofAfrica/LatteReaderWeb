@@ -588,3 +588,13 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   .mobile-tabs button { min-width: 44px; font-size: 8px; }
   .mobile-page { display: none; }
 }
+
+/* Analytics consent: small, quiet, and never covers the reading controls for long. */
+.consent-banner { position: fixed; z-index: 90; inset-inline-end: 16px; bottom: calc(16px + var(--mobile-bar-height, 0px) + env(safe-area-inset-bottom, 0px)); max-width: min(380px, calc(100vw - 32px)); padding: 14px 16px; border: 1px solid var(--crema); border-radius: 12px; background: var(--chrome); color: var(--foam); box-shadow: 0 10px 30px rgba(0,0,0,.35); font-size: 13px; line-height: 1.45; }
+.consent-banner p { margin: 0 0 10px; }
+.consent-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.consent-actions .secondary-button { min-height: 36px; padding: 6px 14px; }
+.consent-actions .consent-accept { border-color: var(--caramel); }
+.link-button { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; border-bottom: 1px solid transparent; }
+.link-button:hover, .link-button:focus-visible { color: var(--butter); border-bottom-color: currentColor; }
+@media (max-width: 640px) { .consent-banner { inset-inline: 12px; bottom: calc(12px + var(--mobile-bar-height, 0px) + env(safe-area-inset-bottom, 0px)); max-width: none; } }
