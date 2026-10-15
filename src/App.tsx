@@ -952,7 +952,7 @@ function App() {
             )}
           </>
         )}
-        <DiagnosticsStatus />
+        {__LATTE_DIAGNOSTICS__ && <DiagnosticsStatus />}
         <div className="visually-hidden" role="status" aria-live="polite">{documentState ? `${extractionLabel}. ${readingStatus}. ${playback.message}.` : 'No PDF open.'}</div>
       </section>
     </main>

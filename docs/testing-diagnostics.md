@@ -125,11 +125,14 @@ only).
 
 ## Explicit private preview only
 
-Normal `npm run build` produces a backend-free static app. Normal dev/preview has no
-transport or ingestion middleware. No `VITE_*` flag is baked into production.
-To opt in **only** for the private Linux preview:
+Normal `npm run build` (the public build deployed to lattereader.iririlabs.com) compiles
+diagnostics out entirely: no "Help with problems" panel, no event buffer, no marker check
+and no `/__latte_diagnostics/events` request (`__LATTE_DIAGNOSTICS__` is `false`). Normal
+dev/preview has no transport or ingestion middleware.
+To opt in **only** for the private Linux preview, build and serve with the flag:
 
 ```sh
+LATTE_PRIVATE_DIAGNOSTICS=1 npm run build
 LATTE_PRIVATE_DIAGNOSTICS=1 npm run preview -- --host 127.0.0.1 --port 4176 --strictPort
 ```
 

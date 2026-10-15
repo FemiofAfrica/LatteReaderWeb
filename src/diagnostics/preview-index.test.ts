@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { networkInterfaces } from 'node:os'
+import { networkInterfaces, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isIndexDocumentRequest, privateDiagnosticsPlugin } from '../../scripts/privateDiagnosticsPlugin'
 
@@ -28,7 +28,7 @@ function nonLoopbackAddress(): string | undefined {
 }
 
 async function previewServer(enabled: boolean, host = '127.0.0.1') {
-  const directory = mkdtempSync(join(process.env.TMPDIR ?? '/root/.hermes/cache/scratch', 'latte-preview-'))
+  const directory = mkdtempSync(join(tmpdir(), 'latte-preview-'))
   mkdirSync(join(directory, 'dist'))
   writeFileSync(join(directory, 'dist/index.html'), '<!doctype html><html><head><title>LatteReader</title></head><body><div id="root"></div></body></html>')
   const previous = process.cwd()
