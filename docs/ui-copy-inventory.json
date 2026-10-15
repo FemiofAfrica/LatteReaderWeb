@@ -1,0 +1,494 @@
+[
+  {
+    "file": "src/App.tsx",
+    "current": "Find character labels and dialogue in this PDF.",
+    "replacement": "Find characters who speak in this PDF.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Restored the saved local voice plan for this document.",
+    "replacement": "Your saved character voices are back.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Character analysis failed. Try again.",
+    "replacement": "Could not find characters. Try again.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Saved PDF, voice plan, settings, and reading position deleted from this browser.",
+    "replacement": "Your saved PDF, voices and reading settings were deleted.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Local data could not be deleted. Try again.",
+    "replacement": "Could not delete the saved PDF. Try again.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Extraction complete",
+    "replacement": "Ready to read",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Extraction error",
+    "replacement": "Could not read the text",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Extracting page ${documentState.extractedPages} of ${documentState.pageCount}",
+    "replacement": "Preparing page ${documentState.extractedPages} of ${documentState.pageCount}",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Open a PDF · Extract · Listen",
+    "replacement": "Open a PDF · Listen",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Choose a local PDF",
+    "replacement": "Choose a PDF",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Checking local reader storage",
+    "replacement": "Finding your saved PDF",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Open a text PDF, preview each page, and listen with a voice already available in your browser.",
+    "replacement": "Open a PDF, browse its pages and listen.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Open a local PDF",
+    "replacement": "Open a PDF",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Your current PDF is saved only in this browser and restored after reload. Opening another PDF replaces it. PDF content is never uploaded.",
+    "replacement": "Your PDF stays in this browser and returns when you reopen the app. A new PDF replaces it. Your PDF is never uploaded.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Clear saved reader data",
+    "replacement": "Delete saved PDF",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Text extraction progress",
+    "replacement": "Preparing your PDF",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "File and storage details",
+    "replacement": "Saved PDF",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "This browser saves the PDF, voice plan, settings, and page position. Replacing it removes the previous document data.",
+    "replacement": "Your PDF, voices and reading place are saved here. A new PDF replaces them.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Delete local data",
+    "replacement": "Delete saved PDF",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Voice engine",
+    "replacement": "Voice",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Reading engine",
+    "replacement": "Reading voice",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Browser default",
+    "replacement": "Browser voice",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Local narrator (Jasper)",
+    "replacement": "Natural voice",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "English narrator with Misaki and a learned fallback. Enable loads about ${formatBytes(NARRATOR_COMPONENT_BYTES)} of voice files plus a small app worker. PDF text and audio stay on this device. Later enables may download again.",
+    "replacement": "English only. Download about ${formatBytes(NARRATOR_COMPONENT_BYTES)} from this site, plus a little to start.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Browser voice choices below are preserved but do not apply to Jasper.",
+    "replacement": "Your PDF, selected text and audio stay on this device.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Follows the playing chunk, not individual words. Cross-page follow moves at chunk completion. Foreground only.",
+    "replacement": "Highlights follow short passages, not each word. Keep the app open while listening.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Enable local narrator",
+    "replacement": "Download voice",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Cancel and release voice",
+    "replacement": "Turn off voice",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "(privateNarrator ? 'Jasper (private trial)' : 'Jasper (on this device)')",
+    "replacement": "'Natural voice'",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "The selected voice is unavailable. Using automatic.",
+    "replacement": "Your voice is unavailable. Using the default voice.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Loading voices. Browser default can read.",
+    "replacement": "Finding voices. You can still press Play.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "No voices listed. Try browser default.",
+    "replacement": "No voices found. Try the default voice.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Default reading voice",
+    "replacement": "Browser voice choice",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Restore browser default",
+    "replacement": "Use browser voice",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "One voice by default. Uses the browser’s default English voice when listed; otherwise the system default. Character voice choices are optional.",
+    "replacement": "Choose a browser voice or keep the default.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Uses voices provided by this browser. Automatic uses the default English voice when listed, otherwise the system default. Changes apply when you start reading again. If no voices are listed and reading is silent, install or enable a browser voice. Kokoro is not active.",
+    "replacement": "The default uses an English voice when available. Changes apply next time you press Play. Some browser voices use the internet. If reading is silent, add a voice in your browser settings.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Analyze Characters",
+    "replacement": "Find character voices",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Detected speakers",
+    "replacement": "Characters who speak",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Some letters could not be extracted from this PDF. Reading may omit them. Try a text-exported PDF; local OCR is not available yet.",
+    "replacement": "Some letters cannot be read and may be missed. Try a PDF with selectable text.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Extracting text...",
+    "replacement": "Preparing text...",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Voice stopped. Play to retry from this page.",
+    "replacement": "This voice cannot read this passage. Choose Browser voice or select different text.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Text is not ready yet. Wait for extraction, then press Play.",
+    "replacement": "Text is not ready yet. Wait a moment, then press Play.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/statusText.ts",
+    "current": "Text extraction error",
+    "replacement": "Could not read the text",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/statusText.ts",
+    "current": "Loading local voice",
+    "replacement": "Preparing voice…",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/statusText.ts",
+    "current": "Buffering local voice",
+    "replacement": "Preparing reading…",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/statusText.ts",
+    "current": "Voice ready. Press Play.",
+    "replacement": "Press play to begin",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/statusText.ts",
+    "current": "Local voice failed. Retry or use Browser default.",
+    "replacement": "Could not use this voice. Try again or choose Browser voice.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/statusText.ts",
+    "current": "Loading the local voice. This can take up to a minute.",
+    "replacement": "Preparing voice… This may take a minute.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/statusText.ts",
+    "current": "return `Local voice: ${localStatus}`",
+    "replacement": "return ({off: 'Download the voice to begin', buffering: 'Preparing reading…', playing: 'Reading', paused: 'Paused'} as const)[localStatus]",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/document.ts",
+    "current": "Text extraction could not start. Try opening the PDF again.",
+    "replacement": "Could not read the text. Open the PDF again.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/document.ts",
+    "current": "Text extraction stopped unexpectedly. Try opening the PDF again.",
+    "replacement": "Reading the text stopped. Open the PDF again.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/document.ts",
+    "current": "Text extraction returned an invalid result. Try opening the PDF again.",
+    "replacement": "Could not read the text. Open the PDF again.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/document.ts",
+    "current": "Could not extract text from this PDF. Try opening it again.",
+    "replacement": "Could not read this PDF’s text. Open it again.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/document.ts",
+    "current": "No readable text found. This may be an image-only PDF; OCR is not available.",
+    "replacement": "No readable text found. This app cannot read text inside images.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/document.ts",
+    "current": "no readable text. Reading skips these pages; they may be blank or image-only. OCR is not available.",
+    "replacement": "no readable text and will be skipped. They may be blank or contain only images.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/domain/playback.ts",
+    "current": "Waiting for text extraction before continuous reading",
+    "replacement": "Preparing the text before reading",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/VoiceChooser.tsx",
+    "current": "Automatic (browser language)",
+    "replacement": "Default voice",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/VoiceChooser.tsx",
+    "current": " · device",
+    "replacement": " · on this device",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/VoiceChooser.tsx",
+    "current": " · browser service",
+    "replacement": " · may use the internet",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/VoiceChooser.tsx",
+    "current": "Your choice is not available. Reading uses the automatic voice until it returns.",
+    "replacement": "Your voice is unavailable. Reading uses the default voice for now.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/ReadAlong.tsx",
+    "current": "Read-along transcript",
+    "replacement": "Read-along text",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/ReadAlong.tsx",
+    "current": "Extracted text, not a PDF overlay. ",
+    "replacement": "Text from your PDF. ",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/ReadAlong.tsx",
+    "current": "Play to follow sentences when this voice provides boundary events.",
+    "replacement": "Press Play to follow the reading.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/ReadAlong.tsx",
+    "current": "Paused. This voice has not reported a sentence position.",
+    "replacement": "Paused. Your voice has not shared its reading place.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/ReadAlong.tsx",
+    "current": "Following the playing chunk, not individual words.",
+    "replacement": "Following short passages, not each word.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/ReadAlong.tsx",
+    "current": "Sentence follows voice boundary events.",
+    "replacement": "Following the sentence being read.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/components/ReadAlong.tsx",
+    "current": "Waiting for voice boundaries. Position updates at utterance starts and ends only.",
+    "replacement": "Your voice shares its place only when a passage starts or ends.",
+    "reason": "Plain user action/state; retain privacy, saved data and capability limits."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "LatteReader PDF console",
+    "replacement": "LatteReader PDF reader",
+    "reason": "Plain accessible wording; download rounded in decimal MB including room for small startup code."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Reading scope",
+    "replacement": "What to read",
+    "reason": "Plain accessible wording; download rounded in decimal MB including room for small startup code."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Speech playback controls",
+    "replacement": "Reading controls",
+    "reason": "Plain accessible wording; download rounded in decimal MB including room for small startup code."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "English only. Download about ${formatBytes(NARRATOR_COMPONENT_BYTES)} from this site, plus a little to start.",
+    "replacement": "English only. Download about ${(NARRATOR_COMPONENT_BYTES / 1000000).toFixed(1)} MB from this site.",
+    "reason": "Plain accessible wording; download rounded in decimal MB including room for small startup code."
+  },
+  {
+    "file": "src/components/DiagnosticsStatus.tsx",
+    "current": "Diagnostics · {transport.state} · {errorLabel}; content-free events, memory/session/transport counters, reason codes",
+    "replacement": "Help with problems; Reports never include your PDF, text or filename.; Reports stay in this browser. / Reports are shared for this private test. / Could not send the report. Retrying.; Clearing removes reports here, not reports already shared.; Save problem report; Clear problem reports",
+    "reason": "Remove telemetry from ordinary UI. Keep content-free recording, export, clearing and private-sharing honesty unchanged."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Browser chooser and about-browser text displayed beside Natural voice",
+    "replacement": "Shown for Browser voice only; About this voice keeps redownload notice and Use browser voice action",
+    "reason": "Keep stored choices intact, hide irrelevant instructions while Natural voice is selected."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "Character confidence percentage",
+    "replacement": "Removed from display; retained in profile data",
+    "reason": "Not an actionable reader decision. No data changed."
+  },
+  {
+    "file": "src/App.tsx",
+    "current": "{voicePlan.segments.length} segments",
+    "replacement": "{voicePlan.segments.length} passages",
+    "reason": "Plain reading term; count/data unchanged."
+  },
+  {
+    "file": "src/domain/playback.ts",
+    "current": "Ready to read (idle helper)",
+    "replacement": "Press play to begin",
+    "reason": "Avoid repeating document readiness, invite the next action."
+  },
+  {
+    "file": "src/domain/statusText.ts",
+    "current": "Stopped while Natural voice is off",
+    "replacement": "Download voice first",
+    "reason": "Tell the user what to do rather than imply a fault."
+  },
+  {
+    "file": "src/speech/local-narrator.css",
+    "current": "Compact voice dropdown and inline licence link",
+    "replacement": "44px dropdown; 24px licence link target",
+    "reason": "Reachable actions without smaller typography or redesign."
+  },
+  {
+    "file": "rendered narrator panel (1440px)",
+    "current": [
+      "One fixed English voice, Jasper, running on this device. Enable loads about 53.1 MB of voice files plus a small app worker from this site: the speech model in two parts, the voice, the speech runtime and the English phonemizer. Nothing is requested before you press Enable, and nothing comes from anywhere else. There is no saved voice cache in the app; later enables may fetch the files again. Actual network transfer depends on your browser cache and compression. Your PDF, its text, your selection and the audio stay on this device. Browser speech stays the default and goes on working.",
+      "Speech component: eSpeak-NG 1.52.0, GPL-3.0-or-later, no warranty. Built from commit 4870adfa, modified 2026-10-14. Licences and notices · Corresponding source · Source archive (17.2 MB).",
+      "Browser voice choices below are preserved but do not apply to Jasper.",
+      "Follows the playing chunk, not individual words. Cross-page follow moves at chunk completion. Foreground only.",
+      "Local voice: off"
+    ],
+    "replacement": [
+      "English only. Download about 63.4 MB from this site.",
+      "Licences",
+      "Your PDF, selected text and audio stay on this device.",
+      "Highlights follow short passages, not each word. Keep the app open while listening.",
+      "Download the voice to begin"
+    ],
+    "reason": "Exact rendered baseline to final copy, including prior consent and legal notices. Detailed component attribution now remains on reachable Licences page."
+  },
+  {
+    "file": "src/components/DiagnosticsStatus.tsx",
+    "current": "live connecting / private live / live retrying / live unavailable (technical transport states)",
+    "replacement": "Connecting private test reports… / Reports are shared for this private test. / Could not send the report. Retrying. / Reports are not being shared. Save a report instead.",
+    "reason": "Retain separate connected, transient failure and unavailable meanings without counters or reason codes. Real isolated private-browser transport tests retain recovery/readback assertions."
+  }
+]

@@ -17,10 +17,10 @@ export function textAvailability(pages: readonly string[]): TextAvailability {
 
 export type ExtractionErrorCode = 'extract-startup' | 'extract-runtime' | 'extract-protocol' | 'extract-pdf'
 export const extractionErrorCopy: Record<ExtractionErrorCode, string> = {
-  'extract-startup': 'Text extraction could not start. Try opening the PDF again.',
-  'extract-runtime': 'Text extraction stopped unexpectedly. Try opening the PDF again.',
-  'extract-protocol': 'Text extraction returned an invalid result. Try opening the PDF again.',
-  'extract-pdf': 'Could not extract text from this PDF. Try opening it again.',
+  'extract-startup': 'Could not read the text. Open the PDF again.',
+  'extract-runtime': 'Reading the text stopped. Open the PDF again.',
+  'extract-protocol': 'Could not read the text. Open the PDF again.',
+  'extract-pdf': 'Could not read this PDF’s text. Open it again.',
 }
 
 export type ExtractionMessage =
@@ -55,9 +55,9 @@ export interface DocumentState extends TextAvailability {
 
 export function availabilityWarning(document: DocumentState): string {
   if (document.extraction !== 'complete') return ''
-  if (!document.pagesWithReadableText) return 'No readable text found. This may be an image-only PDF; OCR is not available.'
+  if (!document.pagesWithReadableText) return 'No readable text found. This app cannot read text inside images.'
   const missing = document.pagesWithoutReadableText
-  return missing ? `${missing} ${missing === 1 ? 'page has' : 'pages have'} no readable text. Reading skips these pages; they may be blank or image-only. OCR is not available.` : ''
+  return missing ? `${missing} ${missing === 1 ? 'page has' : 'pages have'} no readable text and will be skipped. They may be blank or contain only images.` : ''
 }
 
 export const emptyDocumentState = (): DocumentState => ({

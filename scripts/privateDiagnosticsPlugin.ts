@@ -58,8 +58,10 @@ export function trimEvents(events: DiagnosticEvent[], limit = SERVER_LIMIT, prog
 }
 export function privateDiagnosticsPlugin(enabled: boolean): Plugin {
   const root = process.cwd()
-  const log = resolve(root, '.runtime/diagnostics/events.jsonl')
-  const rejectionsLog = resolve(root, '.runtime/diagnostics/ingest-rejections.jsonl')
+  const directory = resolve(process.env.LATTE_DIAGNOSTICS_DIR || resolve(root, '.runtime/diagnostics'))
+  const log = resolve(directory, 'events.jsonl')
+  const rejectionsLog = resolve(directory, 'ingest-rejections.jsonl')
+  let indexPath = resolve(root, 'dist/index.html')
   let entries: DiagnosticEvent[] | undefined
   let notes: IngestNote[] | undefined
   function loadNotes(): IngestNote[] {
@@ -76,7 +78,7 @@ export function privateDiagnosticsPlugin(enabled: boolean): Plugin {
   function noteIngest(reason: RejectionReason, status: number | null) {
     try {
       const next = [...loadNotes(), { timestamp: new Date().toISOString(), status, reason }].slice(-REJECTION_LIMIT)
-      mkdirSync(resolve(root, '.runtime/diagnostics'), { recursive: true })
+      mkdirSync(directory, { recursive: true })
       writeFileSync(`${rejectionsLog}.tmp`, next.map(note => JSON.stringify(note)).join('\n') + '\n')
       renameSync(`${rejectionsLog}.tmp`, rejectionsLog)
       notes = next
@@ -123,7 +125,7 @@ export function privateDiagnosticsPlugin(enabled: boolean): Plugin {
         // A batch that already landed is acknowledged, not stored again.
         if (!fresh.length) { finish(204); return }
         const retained = trimEvents([...entries, ...fresh])
-        mkdirSync(resolve(root, '.runtime/diagnostics'), { recursive: true })
+        mkdirSync(directory, { recursive: true })
         writeFileSync(`${log}.tmp`, retained.map(e => JSON.stringify(e)).join('\n') + '\n')
         renameSync(`${log}.tmp`, log)
         entries = retained
@@ -135,6 +137,7 @@ export function privateDiagnosticsPlugin(enabled: boolean): Plugin {
     name: 'latte-private-diagnostics',
     apply: 'serve',
     configResolved(config) {
+      indexPath = resolve(config.root, config.build.outDir, 'index.html')
       if (enabled && (![config.server.host, config.preview.host].every(host =>
         host === '127.0.0.1' || host === 'localhost' || host === '::1'))) {
         throw new Error('Private diagnostics requires loopback hosts.')
@@ -148,7 +151,7 @@ export function privateDiagnosticsPlugin(enabled: boolean): Plugin {
         if (!enabled || !isIndexDocumentRequest(req.url)) return next()
         if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.localAddress ?? '')) { res.statusCode = 403; res.end(); return }
         res.setHeader('Content-Type', 'text/html'); res.setHeader('Cache-Control', 'no-store')
-        res.end(readFileSync(resolve(root, 'dist/index.html'), 'utf8').replace('</head>', `${marker}</head>`))
+        res.end(readFileSync(indexPath, 'utf8').replace('</head>', `${marker}</head>`))
       })
     },
   }

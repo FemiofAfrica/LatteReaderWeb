@@ -1,0 +1,55 @@
+{
+  "note": "IPA parity fixture: the sentences and the expected IPA are the ones compared in the eSpeak-NG 1.52.0 WASM build report. Expected values are the output of the package the pinned build replaced, phonemizer@1.2.1 (asm.js), produced by that build's scripts/ref-npm.mjs with the identical settings (language \"en-us\", split on newline, empty lines dropped).",
+  "language": "en-us",
+  "sentences": [
+    {
+      "text": "Hello world.",
+      "expected": [
+        "həlˈoʊ wˈɜːld"
+      ]
+    },
+    {
+      "text": "The first different coffee is ready.",
+      "expected": [
+        "ðə fˈɜːst dˈɪfɹənt kˈɔfi ɪz ɹˈɛdi"
+      ]
+    },
+    {
+      "text": "office waffle",
+      "expected": [
+        "ˈɑːfɪs wˈɑːfəl"
+      ]
+    },
+    {
+      "text": "financial flow",
+      "expected": [
+        "faɪnˈænʃəl flˈoʊ"
+      ]
+    },
+    {
+      "text": "A different coffee, first of all.",
+      "expected": [
+        "ɐ dˈɪfɹənt kˈɔfi",
+        "fˈɜːst ʌv ˈɔːl"
+      ]
+    },
+    {
+      "text": "coffee first different office",
+      "expected": [
+        "kˈɔfi fˈɜːst dˈɪfɹənt ˈɑːfɪs"
+      ]
+    },
+    {
+      "text": "ﬁnancial ﬂow ofﬁce",
+      "expected": [
+        "faɪnˈænʃəl flˈoʊ ˈɑːfɪs"
+      ]
+    },
+    {
+      "text": "naïve café résumé",
+      "expected": [
+        "naɪˈiːv kæfˈeɪ ɹˈɛzuːmˌeɪ"
+      ]
+    }
+  ]
+}

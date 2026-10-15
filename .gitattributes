@@ -1,1 +1,11 @@
 *.pdf binary
+
+# Served speech assets. These are hash-verified byte for byte in the browser, so
+# they must never be line-ending converted on checkout: one of the model parts
+# happens to contain no NUL byte and would otherwise be treated as text.
+public/voice/narrator/chunks/* binary
+public/voice/narrator/jasper.f32 binary
+public/voice/narrator/runtime/*.wasm binary
+public/voice/espeak/*.wasm binary
+public/voice/espeak/*.data binary
+public/voice/source/*.tar.gz binary

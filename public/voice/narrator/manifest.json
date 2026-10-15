@@ -1,0 +1,194 @@
+{
+  "component": "Kitten Micro 0.8 local narrator, fixed voice Jasper (English)",
+  "model": {
+    "provider": "KittenML, Hugging Face repository KittenML/kitten-tts-micro-0.8",
+    "revision": "1ccf72b2c2048fd17efac7de2fab32d10e225084",
+    "licence": "Apache-2.0 as declared by the publisher (the repository carries no LICENSE file)",
+    "notice": "../notices/LICENSE-Apache-2.0.txt"
+  },
+  "graph": {
+    "name": "model.onnx",
+    "bytes": 41384970,
+    "sha256": "95481626fee1ba70ce683e69c534fc7cb38433c46ce42d3abbeafb4b9f1a4123",
+    "parts": [
+      {
+        "path": "chunks/model.onnx.part1",
+        "bytes": 20692485,
+        "sha256": "1f5b175d8b5458ce51e9084885b67256a97e72f00f87e73c9671a06d3d1e4f1a"
+      },
+      {
+        "path": "chunks/model.onnx.part2",
+        "bytes": 20692485,
+        "sha256": "bccaf05c1078cb80a3dc602db4bd3f9c1919c74d30f9da9a138294f7d298ed5f"
+      }
+    ]
+  },
+  "voice": {
+    "name": "jasper.f32",
+    "alias": "Jasper",
+    "key": "expr-voice-2-m",
+    "path": "jasper.f32",
+    "bytes": 409600,
+    "sha256": "36f085b4a70855602749524990dd9793c6b69598f53284990bc7aa51289de12b",
+    "dtype": "float32",
+    "byteOrder": "little-endian",
+    "shape": [
+      400,
+      256
+    ],
+    "derivation": "selected from voices.npz key expr-voice-2-m and written unchanged as little-endian float32; no arithmetic, transpose or quantisation",
+    "derivedFrom": {
+      "name": "voices.npz",
+      "bytes": 3278902,
+      "sha256": "112710c1be8ad0e967c190fb0fd95cbe5848ec4791b93209f20b28b7da20dac1",
+      "shipped": false
+    }
+  },
+  "runtime": {
+    "component": "onnxruntime-web",
+    "version": "1.24.3",
+    "licence": "MIT",
+    "notice": "../notices/LICENSE-MIT-onnxruntime-web.txt",
+    "choice": "ort-wasm-simd-threaded (WASM + SIMD, single-threaded at numThreads=1). The jsep build is 25,014,754 bytes and the asyncify build 27,190,919 bytes; asyncify is over the 26,214,400-byte per-file limit, and neither is needed because this narrator runs one inference on the CPU with no WebGPU or asyncify path.",
+    "bundle": {
+      "path": "runtime/ort.wasm.min.mjs",
+      "bytes": 49997,
+      "sha256": "d5a6d7bc8ee587648fb3742dde8c0094d17cbd3822a68bbec8ddfcd4f2adb88e"
+    },
+    "glue": {
+      "path": "runtime/ort-wasm-simd-threaded.mjs",
+      "bytes": 24274,
+      "sha256": "5687566b1bc1c8cf628d76c2ddb16b2a3b81a7997273d4666564880495088e57"
+    },
+    "wasm": {
+      "path": "runtime/ort-wasm-simd-threaded.wasm",
+      "bytes": 12361745,
+      "sha256": "be0e129949062ad50290ef94683fac8be5bb6156f709e030b7a5f1661a2f6c17"
+    }
+  },
+  "phonemizer": {
+    "component": "Misaki-derived English frontend with learned BART fallback",
+    "project": "hexgrad/misaki",
+    "revision": "fba1236595f2d2bf21d414ba6e57d25256afada3",
+    "version": "0.9.4",
+    "licence": "Apache-2.0",
+    "fallback": {
+      "project": "PeterReid/graphemes_to_phonemes_en_us",
+      "revision": "a5631b285d18d59483c32c0c3379cb9fac924f4b"
+    },
+    "noticeIndex": "../notices/index.html",
+    "files": [
+      {
+        "path": "frontend/frontend.mjs",
+        "bytes": 10070,
+        "sha256": "6842d118987e879dad31728b881ae79fb9150dd9f5882fc547c2aea3ffef7514"
+      },
+      {
+        "path": "frontend/bart.mjs",
+        "bytes": 4528,
+        "sha256": "d270ee9a32cd4858d3a6942cc90fdb2df9448c66718f115e9f9257f5663927b6"
+      },
+      {
+        "path": "frontend/bart-config.json",
+        "bytes": 1257,
+        "sha256": "8deb3537fb29c63cd9f20d75515ae06e4c92f1b6db0703a2d45bca95b33a53a4"
+      },
+      {
+        "path": "frontend/model.safetensors",
+        "bytes": 3011692,
+        "sha256": "dc4a02e62d4fcb4bb4097ecf00db89b8e1a12a549a52ab6adfbba220b80a55c5"
+      },
+      {
+        "path": "frontend/us_gold.json",
+        "bytes": 3000469,
+        "sha256": "dc414872a49a28ae6c141463d502fd945f3b2fde040484fdc47d00cc4612686f"
+      },
+      {
+        "path": "frontend/us_silver.json",
+        "bytes": 3099517,
+        "sha256": "de8f67be911bb6c659187b4a65fd966b6a30e56350e0f790d763210b053ac475"
+      }
+    ]
+  },
+  "symbols": {
+    "path": "src/speech/local/kittenSymbols.json",
+    "bytes": 1765,
+    "sha256": "c31f54084e4c7d95944fb33383bd65b0af7d84969ccc6ed6c1472fbbcb60b2ae"
+  },
+  "perFileLimit": {
+    "host": "Cloudflare Pages",
+    "bytes": 26214400
+  },
+  "transfer": {
+    "basis": "Uncompressed component file sizes, one copy per entry; excludes built app worker and HTTP overhead. Actual transfer depends on cache, compression and retries.",
+    "bytes": 63358119,
+    "entries": [
+      {
+        "path": "chunks/model.onnx.part1",
+        "bytes": 20692485,
+        "why": "part of the pinned model graph, reassembled and re-hashed in the worker"
+      },
+      {
+        "path": "chunks/model.onnx.part2",
+        "bytes": 20692485,
+        "why": "part of the pinned model graph, reassembled and re-hashed in the worker"
+      },
+      {
+        "path": "jasper.f32",
+        "bytes": 409600,
+        "why": "the pinned Jasper voice tensor"
+      },
+      {
+        "path": "runtime/ort.wasm.min.mjs",
+        "bytes": 49997,
+        "why": "ONNX Runtime Web JavaScript, served from this origin"
+      },
+      {
+        "path": "runtime/ort-wasm-simd-threaded.mjs",
+        "bytes": 24274,
+        "why": "ONNX Runtime Web WebAssembly loader, served from this origin"
+      },
+      {
+        "path": "runtime/ort-wasm-simd-threaded.wasm",
+        "bytes": 12361745,
+        "why": "ONNX Runtime Web WebAssembly, served from this origin"
+      },
+      {
+        "path": "frontend/frontend.mjs",
+        "bytes": 10070,
+        "sha256": "6842d118987e879dad31728b881ae79fb9150dd9f5882fc547c2aea3ffef7514",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
+      },
+      {
+        "path": "frontend/bart.mjs",
+        "bytes": 4528,
+        "sha256": "d270ee9a32cd4858d3a6942cc90fdb2df9448c66718f115e9f9257f5663927b6",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
+      },
+      {
+        "path": "frontend/bart-config.json",
+        "bytes": 1257,
+        "sha256": "8deb3537fb29c63cd9f20d75515ae06e4c92f1b6db0703a2d45bca95b33a53a4",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
+      },
+      {
+        "path": "frontend/model.safetensors",
+        "bytes": 3011692,
+        "sha256": "dc4a02e62d4fcb4bb4097ecf00db89b8e1a12a549a52ab6adfbba220b80a55c5",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
+      },
+      {
+        "path": "frontend/us_gold.json",
+        "bytes": 3000469,
+        "sha256": "dc414872a49a28ae6c141463d502fd945f3b2fde040484fdc47d00cc4612686f",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
+      },
+      {
+        "path": "frontend/us_silver.json",
+        "bytes": 3099517,
+        "sha256": "de8f67be911bb6c659187b4a65fd966b6a30e56350e0f790d763210b053ac475",
+        "why": "Pinned English pronunciation frontend, dictionaries and learned fallback"
+      }
+    ]
+  }
+}

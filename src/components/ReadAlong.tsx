@@ -43,8 +43,8 @@ export function ReadAlong({ text, page, position, following, status }: {
     cursor = range.end
     return result
   })
-  return <section className="read-along" aria-label="Read-along transcript">
-    <p className="panel-copy">Extracted text, not a PDF overlay. {status === 'ready' ? 'Play to follow sentences when this voice provides boundary events.' : status === 'paused' ? position?.ranges.length ? 'Paused at this sentence.' : 'Paused. This voice has not reported a sentence position.' : position?.evidence === 'boundary' ? 'Sentence follows voice boundary events.' : 'Waiting for voice boundaries. Position updates at utterance starts and ends only.'}</p>
+  return <section className="read-along" aria-label="Read-along text">
+    <p className="panel-copy">Text from your PDF. {status === 'ready' ? 'Press Play to follow the reading.' : status === 'paused' ? position?.ranges.length ? 'Paused at this sentence.' : 'Paused. Your voice has not shared its reading place.' : position?.evidence === 'audio-chunk' ? 'Following short passages, not each word.' : position?.evidence === 'boundary' ? 'Following the sentence being read.' : 'Your voice shares its place only when a passage starts or ends.'}</p>
     <div className="transcript-frame"><div className="read-along-text page-text" data-source-page={page} ref={scroller} tabIndex={0}><p>{parts}{text.slice(cursor)}</p></div></div>
   </section>
 }

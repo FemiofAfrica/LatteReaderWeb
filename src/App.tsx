@@ -11,6 +11,7 @@ import {
   type CurrentDocumentRecord,
 } from './domain/currentDocumentStore'
 import { availabilityWarning, emptyDocumentState, extractionErrorCopy, hasUsableText, isExtractionMessage, type DocumentState, type ExtractionMessage, type ExtractionErrorCode } from './domain/document'
+import { readingStatusText, localVoiceCopy, narratorNoticeCopy } from './domain/statusText'
 import { uploadDocument } from './domain/uploadFlow'
 import { computeFitZoom, MAX_PREVIEW_ZOOM, MIN_PREVIEW_ZOOM } from './domain/fit'
 import {
@@ -20,11 +21,15 @@ import {
   type ReadScope,
 } from './domain/playback'
 import { planSpeechChunks, type SpeechChunk } from './domain/speechPlan'
-import { readingTimeline, seekChunks, sentencePosition, sentenceSkip, type ReadingPosition } from './domain/readingPosition'
+import { readingTimeline, seekChunks, sentencePosition, audioChunkPosition, sentenceSkip, type ReadingPosition } from './domain/readingPosition'
 import { ReadAlong } from './components/ReadAlong'
 import { sourceSelection, selectionChunks, type SourceSelection } from './domain/selection'
 import { ReadingProgress } from './components/ReadingProgress'
-import { BrowserSpeechEngine } from './speech/SpeechEngine'
+import { BrowserSpeechEngine, type SpeechEngine } from './speech/SpeechEngine'
+import { LocalNarratorEngine, type LocalStatus } from './speech/LocalNarratorEngine'
+import { LocalNarratorNotices } from './components/LocalNarratorNotices'
+import { NARRATOR_COMPONENT_BYTES } from './speech/local/narratorAssets'
+import './speech/local-narrator.css'
 import { watchBrowserVoices, type VoiceListState } from './speech/browserVoices'
 import { VoiceChooser } from './components/VoiceChooser'
 import { recordEvent } from './diagnostics/diagnostics'
@@ -89,7 +94,10 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const extractionWorkerRef = useRef<Worker | null>(null)
   const resetVoicesRef = useRef(false)
-  const speechRef = useRef(new BrowserSpeechEngine())
+  const speechRef = useRef<SpeechEngine>(new BrowserSpeechEngine())
+  const localRef = useRef<LocalNarratorEngine | null>(null)
+  const [engine, setEngine] = useState('browser')
+  const [localStatus, setLocalStatus] = useState<LocalStatus>('off')
   const mobileBarRef = useRef<HTMLElement>(null)
   const topbarRef = useRef<HTMLElement>(null)
   const previewScrollRef = useRef<HTMLDivElement>(null)
@@ -133,11 +141,19 @@ function App() {
   const [defaultVoiceKey, setDefaultVoiceKey] = useState<string | undefined>()
   const [voiceList, setVoiceList] = useState<VoiceListState>({ voices: [], status: 'loading' })
   const [voiceFallback, setVoiceFallback] = useState(false)
+  // The voice reports, without any document text, that part of a passage could not be
+  // spoken. Reading continues, so this is a one-line notice and not a stop.
+  const [narratorNotice, setNarratorNotice] = useState(false)
+  useEffect(() => {
+    const seen = () => setNarratorNotice(true)
+    window.addEventListener('latte-local-notice', seen)
+    return () => window.removeEventListener('latte-local-notice', seen)
+  }, [])
   useEffect(() => watchBrowserVoices(setVoiceList), [])
   const defaultVoiceRef = useRef(defaultVoiceKey)
   defaultVoiceRef.current = defaultVoiceKey
   const [voicePlan, setVoicePlan] = useState<DocumentVoicePlan | null>(null)
-  const [analysisMessage, setAnalysisMessage] = useState('Find character labels and dialogue in this PDF.')
+  const [analysisMessage, setAnalysisMessage] = useState('Find characters who speak in this PDF.')
   const [uploadError, setUploadError] = useState('')
   // The diagnosed cause, kept beside the sentence so the reader gets a recovery control only
   // when the document really was replaced and could not be opened.
@@ -180,6 +196,7 @@ function App() {
     return () => {
       clearWait()
       speechRef.current.stop()
+      localRef.current?.dispose()
     }
   }, [])
 
@@ -283,8 +300,8 @@ function App() {
     resetVoicesRef.current = false
     setVoicePlan(null) // Reanalyze stored text with current extraction before speaking.
     setAnalysisMessage(record.voicePlan
-      ? 'Restored the saved local voice plan for this document.'
-      : 'Find character labels and dialogue in this PDF.')
+      ? 'Your saved character voices are back.'
+      : 'Find characters who speak in this PDF.')
 
     const state = emptyDocumentState()
     state.name = record.name
@@ -452,7 +469,7 @@ function App() {
       recordEvent('analysis.complete', { count: plan.profiles.length, durationMs: performance.now() - started })
     } catch {
       recordEvent('analysis.fail', { durationMs: performance.now() - started })
-      setAnalysisMessage('Character analysis failed. Try again.')
+      setAnalysisMessage('Could not find characters. Try again.')
     }
   }
 
@@ -491,17 +508,17 @@ function App() {
     readingPageRef.current = page
     dispatchPlayback({ type: 'PLAY', scope, page })
     speechRef.current.speak({ text: '', chunks, rate: speedRef.current, voiceKey: defaultVoiceRef.current, onVoiceFallback: setVoiceFallback,
-      onPosition: (chunk, char, evidence) => {
+      onPosition: (chunk, char, evidence, end) => {
         const offset = origin + remaining.starts[chunk] + char
         setReadingOffset(offset)
-        setPosition(sentencePosition(full, offset, evidence))
+        setPosition(evidence === 'audio-chunk' ? audioChunkPosition(full, offset, origin + remaining.starts[chunk] + (end ?? char + 1)) : sentencePosition(full, offset, evidence))
       },
       onPage: page => {
         readingPageRef.current = page; setSpokenPage(page)
         if (followingRef.current) setCurrentPage(page)
         dispatchPlayback({ type: 'ADVANCE', page, totalPages: documentRef.current?.pageCount ?? page })
       },
-      onError: () => { setPosition(null); dispatchPlayback({ type: 'FAIL', display: 'Voice unavailable', message: 'Voice stopped. Play to retry from this page.' }) },
+      onError: () => { setPosition(null); dispatchPlayback({ type: 'FAIL', display: 'Voice unavailable', message: 'This voice cannot read this passage. Choose Browser voice or select different text.' }) },
     })
   }
   const seekReading = (requested: number) => {
@@ -523,10 +540,14 @@ function App() {
     if (playback.status === 'playing') { pendingSeekRef.current = null; launch() }
     else { pendingSeekRef.current = launch } // A stopped/paused seek never starts audio.
   }
-  const readingStatus = documentState?.extraction === 'error' ? 'Text extraction error'
-    : !speechRef.current.available ? 'Voice unavailable'
-    : documentState?.extraction === 'complete' && !documentState.pagesWithReadableText ? 'No readable text'
-    : playback.display ?? 'Ready'
+  const readingStatus = readingStatusText({
+    extraction: documentState?.extraction,
+    pagesWithReadableText: documentState?.pagesWithReadableText ?? 0,
+    engine: engine === 'local' ? 'local' : 'browser',
+    localStatus,
+    voiceAvailable: speechRef.current.available,
+    playback: { status: playback.status, display: playback.display },
+  })
   const progressControl = <ReadingProgress value={readingOffset} max={timeline.text.length} status={isMobile ? readingStatus : undefined}
     disabled={!timeline.text.length || documentState?.extraction !== 'complete' || playback.scope === 'selection' && playback.status !== 'ready'}
     onSeek={seekReading} onSkip={direction => seekReading(sentenceSkip(timeline, readingOffset, direction))} />
@@ -551,6 +572,7 @@ function App() {
     }
     setPosition(null); pendingSeekRef.current = null
     clearWait()
+    setNarratorNotice(false)
     runRef.current = { pages: 0, started: performance.now() }
 
     followingRef.current = true
@@ -584,7 +606,7 @@ function App() {
         if (playbackRef.current.status === 'paused') { waitTimerRef.current = window.setTimeout(tick, PENDING_TEXT_POLL_MS); return }
         if (documentRef.current?.extraction === 'complete') { start(); return }
         if (documentRef.current?.extraction === 'error' || performance.now() - started > PENDING_TEXT_TIMEOUT_MS) {
-          dispatchPlayback({ type: 'FAIL', message: 'Text is not ready yet. Wait for extraction, then press Play.' }); return
+          dispatchPlayback({ type: 'FAIL', message: 'Text is not ready yet. Wait a moment, then press Play.' }); return
         }
         waitTimerRef.current = window.setTimeout(tick, PENDING_TEXT_POLL_MS)
       }
@@ -599,6 +621,7 @@ function App() {
       toEnd ? 'document' : 'page', voicePlanRef.current), selected, toEnd)
     if (!chunks.length) return
     clearWait(); speechRef.current.stop(); pendingSeekRef.current = null; setPosition(null)
+    setNarratorNotice(false)
     followingRef.current = true; setFollowing(true)
     const scope = toEnd ? 'document' : 'selection'
     sessionRef.current = chunks; sessionScopeRef.current = scope; setSessionChunks(chunks); setReadingOffset(0)
@@ -611,6 +634,7 @@ function App() {
 
   const stop = () => {
     setVoiceFallback(false)
+    setNarratorNotice(false)
     clearWait()
     runRef.current = { pages: 0, started: 0 }
     readingPageRef.current = 0
@@ -619,7 +643,18 @@ function App() {
     dispatchPlayback({ type: 'STOP' })
   }
 
+  const chooseEngine = (choice: string) => {
+    stop(); localRef.current?.dispose()
+    setEngine(choice); setSessionChunks(null); sessionRef.current = null
+    if (choice === 'local') {
+      const local = new LocalNarratorEngine(setLocalStatus)
+      localRef.current = local; speechRef.current = local
+    } else { localRef.current = null; speechRef.current = new BrowserSpeechEngine() }
+    speechRef.current.onEnd(() => endHandlerRef.current())
+  }
+
   const restoreBrowserDefault = async () => {
+    if (engine === 'local') chooseEngine('browser')
     if (!documentState) return
     stop()
     resetVoicesRef.current = true
@@ -627,11 +662,11 @@ function App() {
     const cleared = voicePlan ? { ...voicePlan, profiles: voicePlan.profiles.map(profile => ({ ...profile, voiceKey: undefined })) } : null
     setVoicePlan(cleared); voicePlanRef.current = cleared
     setSessionChunks(null); sessionRef.current = null; pendingSeekRef.current = null
-    setAnalysisMessage('Browser default restored for all speakers. Press Play to read with one voice.')
+    setAnalysisMessage('Browser voice restored for all speakers. Press Play to read with one voice.')
     try {
       await updateCurrentDocument({ reader: { currentPage, readingPage: spokenPage, zoom, speed, readScope, voiceKey: undefined }, voicePlan: cleared }, documentState.id)
     } catch {
-      setAnalysisMessage('Browser default restored for this session, but could not be saved. Try again.')
+      setAnalysisMessage('Browser voice restored for this session, but could not be saved. Try again.')
     }
   }
 
@@ -663,22 +698,22 @@ function App() {
       setManualZoom(false)
       setSpeed(1)
       setReadScope('document')
-      setAnalysisMessage('Find character labels and dialogue in this PDF.')
+      setAnalysisMessage('Find characters who speak in this PDF.')
       setUploadFailure(null)
-      setUploadError('Saved PDF, voice plan, settings, and reading position deleted from this browser.')
+      setUploadError('Your saved PDF, voices and reading settings were deleted.')
       dispatchPlayback({ type: 'STOP' })
       recordEvent('delete.complete')
     } catch {
       recordEvent('delete.fail', { errorCode: 'storage' })
       setUploadFailure(null)
-      setUploadError('Local data could not be deleted. Try again.')
+      setUploadError('Could not delete the saved PDF. Try again.')
     }
   }
 
   const extractionLabel = !documentState ? ''
-    : documentState.extraction === 'complete' ? 'Extraction complete'
-    : documentState.extraction === 'error' ? 'Extraction error'
-    : `Extracting page ${documentState.extractedPages} of ${documentState.pageCount}`
+    : documentState.extraction === 'complete' ? 'Ready to read'
+    : documentState.extraction === 'error' ? 'Could not read the text'
+    : `Preparing page ${documentState.extractedPages} of ${documentState.pageCount}`
 
   const playLabel = playback.status === 'playing' ? 'Pause reading' : playback.status === 'paused' ? 'Resume reading' : 'Start reading'
   const textWarning = documentState ? availabilityWarning(documentState) : ''
@@ -686,11 +721,11 @@ function App() {
   return (
     <main className="ambient-shell">
       {documentState && <a className="skip-link" href="#panel-read" onClick={() => setActivePanel('read')}>Skip to reader</a>}
-      <section className="reader-deck" data-panel={activePanel} aria-label="LatteReader PDF console">
+      <section className="reader-deck" data-panel={activePanel} aria-label="LatteReader PDF reader">
         <header className="topbar" ref={topbarRef}>
           <div className="brand-lockup">
             <BrandMark />
-            <span><strong>LatteReader</strong><small>Open a PDF · Extract · Listen</small></span>
+            <span><strong>LatteReader</strong><small>Open a PDF · Listen</small></span>
           </div>
           <div className="topbar-actions">
             {documentState && (
@@ -707,7 +742,7 @@ function App() {
               type="file"
               tabIndex={-1}
               accept="application/pdf,.pdf"
-              aria-label="Choose a local PDF"
+              aria-label="Choose a PDF"
               onChange={(event) => {
                 const file = event.target.files?.[0]
                 if (file) void loadPdf(file)
@@ -723,12 +758,13 @@ function App() {
           <section className="empty-state">
             <BrandMark className="brand-mark brand-mark-large" />
             <div>
-              <h1>{isRestoring ? 'Checking local reader storage' : 'Choose a PDF to begin'}</h1>
-              <p>{isRestoring ? 'Looking for your current PDF in this browser.' : 'Open a text PDF, preview each page, and listen with a voice already available in your browser.'}</p>
+              <h1>{isRestoring ? 'Finding your saved PDF' : 'Choose a PDF to begin'}</h1>
+              <p>{isRestoring ? 'Looking for your current PDF in this browser.' : 'Open a PDF, browse its pages and listen.'}</p>
             </div>
-            <button className="primary-button" onClick={openPicker} disabled={isRestoring}>Open a local PDF</button>
-            <p className="privacy-note">Your current PDF is saved only in this browser and restored after reload. Opening another PDF replaces it. PDF content is never uploaded.</p>
-            {uploadError.includes('could not be restored') && <button className="delete-button compact-delete" onClick={() => { if (window.confirm('Delete the saved PDF and all reader data from this browser?')) void deleteLocalData() }}>Clear saved reader data</button>}
+            <button className="primary-button" onClick={openPicker} disabled={isRestoring}>Open a PDF</button>
+            <p className="privacy-note">Your PDF stays in this browser and returns when you reopen the app. A new PDF replaces it. Your PDF is never uploaded.</p>
+            <p className="credit-note"><a href="https://iririlabs.com/work/lattereader">Built by IRIRI Labs</a></p>
+            {uploadError.includes('could not be restored') && <button className="delete-button compact-delete" onClick={() => { if (window.confirm('Delete the saved PDF and all reader data from this browser?')) void deleteLocalData() }}>Delete saved PDF</button>}
             {uploadFailure?.code === 'document-open' && <button className="primary-button" onClick={openPicker}>Open the file again</button>}
           </section>
         ) : (
@@ -742,40 +778,56 @@ function App() {
                     <span><small>Characters</small><strong>{formatNumber.format(documentState.characterCount)}</strong></span>
                   </div>
                   <div className="file-facts"><span>{formatBytes(documentState.size)}</span><span>{extractionLabel}</span></div>
-                  {documentState.extraction === 'extracting' && <progress aria-label="Text extraction progress" value={extractionPercent} max="100" />}
+                  {documentState.extraction === 'extracting' && <progress aria-label="Preparing your PDF" value={extractionPercent} max="100" />}
                   {documentState.error && <p className="error-copy">{documentState.error}</p>}
                   {textWarning && <p className="warning-copy">{textWarning}</p>}
                   <p className="panel-copy">Saved here, not uploaded.</p>
                   <details className="document-details">
-                    <summary>File and storage details</summary>
+                    <summary>Saved PDF</summary>
                     <div tabIndex={0}>
                       <p className="full-filename">{documentState.name}</p>
-                      <p className="panel-copy">This browser saves the PDF, voice plan, settings, and page position. Replacing it removes the previous document data.</p>
+                      <p className="panel-copy">Your PDF, voices and reading place are saved here. A new PDF replaces them.</p>
                       <button className="delete-button" onClick={() => {
                         if (window.confirm('Delete the current PDF and all saved reader data from this browser?')) void deleteLocalData()
-                      }}>Delete local data</button>
+                      }}>Delete saved PDF</button>
                     </div>
                   </details>
                 </section>
 
                 <section className="bezel" id="panel-voices" data-panel="voices">
-                  <h2>Voice engine</h2>
-                  <div className="engine-readout"><span className="status-led ready" aria-hidden="true" /><strong>Browser voice</strong></div>
-                  <p className="panel-copy voice-status" role="status">{voiceList.status === 'unsupported' ? 'Speech is not supported.' : voiceFallback ? 'The selected voice is unavailable. Using automatic.' : voiceList.status === 'loading' ? 'Loading voices. Browser default can read.' : voiceList.status === 'empty' ? 'No voices listed. Try browser default.' : `${voiceList.voices.length} browser voices available.`}</p>
-                  <VoiceChooser label="Default reading voice" selected={defaultVoiceKey} voices={voiceList.voices} onChange={setDefaultVoiceKey} />
-                  <button type="button" className="secondary-button restore-default" onClick={() => void restoreBrowserDefault()}>Restore browser default</button>
-                  <p className="panel-copy">One voice by default. Uses the browser’s default English voice when listed; otherwise the system default. Character voice choices are optional.</p>
-                  <details className="engine-details"><summary>About browser voices</summary><p className="panel-copy" tabIndex={0}>Uses voices provided by this browser. Automatic uses the default English voice when listed, otherwise the system default. Changes apply when you start reading again. If no voices are listed and reading is silent, install or enable a browser voice. Kokoro is not active.</p></details>
+                  <h2>Voice</h2>
+                  <div className="local-narrator-controls">
+                    <label>Reading voice <select aria-label="Reading voice" value={engine} onChange={event => chooseEngine(event.target.value)}><option value="browser">Browser voice</option><option value="local">Natural voice</option></select></label>
+                    {engine === 'local' && <>
+                      <p className="panel-copy">{`English only. Download about ${(NARRATOR_COMPONENT_BYTES / 1000000).toFixed(1)} MB from this site.`}</p>
+                      <LocalNarratorNotices />
+                      <p className="panel-copy">Your PDF, selected text and audio stay on this device.</p>
+                      <p className="panel-copy">Highlights follow short passages, not each word. Keep the app open while listening.</p>
+                      <button type="button" className="secondary-button" disabled={localStatus !== 'off' && localStatus !== 'error'} onClick={() => void localRef.current?.prepare()}>Download voice</button>
+                      <button type="button" className="secondary-button" onClick={() => { stop(); localRef.current?.dispose() }}>Turn off voice</button>
+                      <p className="panel-copy" role="status" data-local-status={localStatus}>{localVoiceCopy(localStatus)}</p>
+                    </>}
+                  </div>
+                  <div className="engine-readout"><span className="status-led ready" aria-hidden="true" /><strong>{engine === 'local' ? 'Natural voice' : 'Browser voice'}</strong></div>
+                  {engine === 'browser' && <>
+                  <p className="panel-copy voice-status" role="status">{voiceList.status === 'unsupported' ? 'Speech is not supported.' : voiceFallback ? 'Your voice is unavailable. Using the default voice.' : voiceList.status === 'loading' ? 'Finding voices. You can still press Play.' : voiceList.status === 'empty' ? 'No voices found. Try the default voice.' : `${voiceList.voices.length} browser voices available.`}</p>
+                  <VoiceChooser label="Browser voice choice" selected={defaultVoiceKey} voices={voiceList.voices} onChange={setDefaultVoiceKey} />
+                  <button type="button" className="secondary-button restore-default" onClick={() => void restoreBrowserDefault()}>Use browser voice</button>
+                  <p className="panel-copy">Choose a browser voice or keep the default.</p>
+                  <details className="engine-details"><summary>About browser voices</summary><p className="panel-copy" tabIndex={0}>The default uses an English voice when available. Changes apply next time you press Play. Some browser voices use the internet. If reading is silent, add a voice in your browser settings.</p></details>
+                  </>}
+                  {engine === 'local' && <details className="engine-details"><summary>About this voice</summary><p className="panel-copy">Voice files may download again when you turn it on.</p><p className="panel-copy">Browser and character voice choices are saved but apply only to Browser voice.</p><button type="button" className="secondary-button restore-default" onClick={() => void restoreBrowserDefault()}>Use browser voice</button></details>}
                 </section>
 
                 <section className="bezel" data-panel="voices">
                   <h2>Character voices</h2>
-                  <button className="key-button secondary-button" onClick={analyze} disabled={!documentState.characterCount || documentState.extraction !== 'complete'}>Analyze Characters</button>
-                  <p className={voicePlan && !isMobile && !analysisMessage.includes('failed') ? 'visually-hidden' : 'panel-copy'} aria-live="polite">{analysisMessage}</p>
+                  {engine === 'local' && <p className="panel-copy">For Browser voice only.</p>}
+                  <button className="key-button secondary-button" onClick={analyze} disabled={!documentState.characterCount || documentState.extraction !== 'complete'}>Find character voices</button>
+                  <p className={voicePlan && !isMobile && !analysisMessage.includes('Could not') ? 'visually-hidden' : 'panel-copy'} aria-live="polite">{analysisMessage}</p>
                   {voicePlan && (
-                    <div className="speaker-list" role="group" aria-label="Detected speakers">
-                      <p><strong>{voicePlan.profiles.length}</strong> voices · <strong>{voicePlan.segments.length}</strong> segments</p>
-                      <ul tabIndex={0}>{voicePlan.profiles.map((profile) => <li key={profile.id}><span className={profile.id === 'narrator' ? 'narrator-dot' : ''} /><strong title={profile.displayName}>{profile.displayName}</strong><small>{Math.round(profile.confidence * 100)}%</small><VoiceChooser label={`${profile.displayName} voice`} automaticLabel="Use default reading voice" selected={profile.voiceKey} voices={voiceList.voices} onChange={key => chooseCharacterVoice(profile.id, key)} /></li>)}</ul>
+                    <div className="speaker-list" role="group" aria-label="Characters who speak">
+                      <p><strong>{voicePlan.profiles.length}</strong> voices · <strong>{voicePlan.segments.length}</strong> passages</p>
+                      <ul tabIndex={0}>{voicePlan.profiles.map((profile) => <li key={profile.id}><span className={profile.id === 'narrator' ? 'narrator-dot' : ''} /><strong title={profile.displayName}>{profile.displayName}</strong><VoiceChooser label={`${profile.displayName} voice`} automaticLabel="Use default reading voice" selected={profile.voiceKey} voices={voiceList.voices} onChange={key => chooseCharacterVoice(profile.id, key)} /></li>)}</ul>
                     </div>
                   )}
                 </section>
@@ -811,7 +863,7 @@ function App() {
                     <button aria-label="Next page" disabled={currentPage >= documentState.pageCount} onClick={() => navigate(currentPage + 1)}><Icon name="next" /></button>
                   </div>}
                   <fieldset className="segmented-control">
-                    <legend>Reading scope</legend>
+                    <legend>What to read</legend>
                     {(['page', 'document'] as ReadScope[]).map((scope) => (
                       <label key={scope}><input type="radio" name="scope" checked={readScope === scope} onChange={() => setReadScope(scope)} /><span>{scope === 'page' ? 'This page only' : 'To the end'}</span></label>
                     ))}
@@ -828,16 +880,17 @@ function App() {
                 <div className="preview-scroll" ref={previewScrollRef} tabIndex={0} aria-label="PDF preview and selectable text">
                   {textWarning && <p className="warning-copy">{textWarning}</p>}
                   {documentState.error && <p className="error-copy" role="alert">{documentState.error}</p>}
+                  {narratorNotice && <p className="warning-copy" data-narrator-notice role="status">{narratorNoticeCopy()}</p>}
                   <button type="button" className="secondary-button read-along-toggle" aria-pressed={readAlong} onClick={() => setReadAlong(value => !value)}>Read-along text</button>
                   {readAlong ? <ReadAlong text={currentText} page={currentPage} position={position} following={following} status={playback.status} />
                     : pdf ? <PdfCanvas document={pdf} pageNumber={currentPage} zoom={renderZoom} onNavigate={navigate} /> : <p>Loading preview...</p>}
-                  {documentState.unmapped > 0 && <p className="warning-copy" role="alert">Some letters could not be extracted from this PDF. Reading may omit them. Try a text-exported PDF; local OCR is not available yet.</p>}
+                  {documentState.unmapped > 0 && <p className="warning-copy" role="alert">Some letters cannot be read and may be missed. Try a PDF with selectable text.</p>}
                   {readAlong && selectionActions}
                   <details className="page-text-disclosure">
                     <summary>Select text to read it</summary>
                     {!readAlong && selectionActions}
                     <div className="page-text" data-source-page={currentPage} aria-label={`Selectable text from page ${currentPage}`} tabIndex={0}>
-                      <p>{hasUsableText(currentText) ? currentText : (documentState.extraction === 'complete' ? 'No readable text was found on this page.' : 'Extracting text...')}</p>
+                      <p>{hasUsableText(currentText) ? currentText : (documentState.extraction === 'complete' ? 'No readable text was found on this page.' : 'Preparing text...')}</p>
                     </div>
                   </details>
                 </div>
@@ -846,7 +899,7 @@ function App() {
             </div>
 
             {!isMobile && (
-              <footer className="transport" aria-label="Speech playback controls">
+              <footer className="transport" aria-label="Reading controls">
                 <div className="transport-buttons">
                   <button aria-label="Stop reading" onClick={stop} disabled={playback.status === 'ready'}><Icon name="stop" /></button>
                   <button className="play-button" aria-label={playLabel} onClick={() => read()} disabled={!documentState.pagesWithReadableText || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>

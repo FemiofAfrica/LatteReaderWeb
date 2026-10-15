@@ -11,7 +11,7 @@ describe('honest text availability', () => {
     const state = { ...emptyDocumentState(), ...textAvailability(['Hi.', '']), extraction: 'complete' as const }
     expect(availabilityWarning(state)).toMatch(/1 page has no readable text/)
     expect(availabilityWarning({ ...state, extraction: 'extracting' })).toBe('')
-    expect(availabilityWarning({ ...state, pagesWithReadableText: 0 })).toMatch(/may be an image-only PDF/)
+    expect(availabilityWarning({ ...state, pagesWithReadableText: 0 })).toMatch(/cannot read text inside images/)
     const chunks = planSpeechChunks(['Hi.', '\u0000', '', 'End.'], 1, 'document')
     expect(chunks.map(c => c.text).join(' ')).toBe('Hi. End.')
     expect(chunks.flatMap(c => c.spans.map(s => s.pageNumber))).toEqual([1, 4])

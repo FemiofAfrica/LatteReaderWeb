@@ -36,7 +36,7 @@ try {
     assert.equal(complete.pagesWithoutReadableText, pages.length - readable)
     assert.equal(Object.hasOwn(complete, 'scanned'), false)
     assert.equal(await page.getByRole('button', { name: 'Start reading' }).isDisabled(), !readable)
-    if (!readable) assert.match(await page.locator('.preview-scroll .warning-copy').innerText(), /may be an image-only/)
+    if (!readable) assert.match(await page.locator('.preview-scroll .warning-copy').innerText(), /cannot read text inside images/)
     if (readable && pages.length > readable) assert.match(await page.locator('.preview-scroll .warning-copy').innerText(), /2 pages have no readable text/)
     evidence.push({ name, complete })
     if (readable) {
@@ -92,7 +92,7 @@ try {
     const page = await browser.newPage({ viewport: { width, height } })
     await page.goto(url)
     await page.locator('input[type=file]').setInputFiles({ name: 'layout.pdf', mimeType: 'application/pdf', buffer: pdf(['Hi.']) })
-    await page.waitForFunction(() => document.body.textContent.includes('Extraction complete'))
+    await page.waitForFunction(() => document.body.textContent.includes('Ready to read'))
     const layout = await page.evaluate(() => ({
       cssWidth: innerWidth, cssHeight: innerHeight,
       compactQuery: matchMedia('(max-width: 780px), (max-height: 600px)').matches,
@@ -126,7 +126,7 @@ try {
       }
     }, fault)
     await page.goto(url); await page.locator('input[type=file]').setInputFiles({ name: 'fault.pdf', mimeType: 'application/pdf', buffer: pdf(['Hi.']) })
-    await page.locator('.mobile-reading-status').filter({ hasText: 'Text extraction error' }).waitFor()
+    await page.locator('.mobile-reading-status').filter({ hasText: 'Could not read the text' }).waitFor()
     const copy = await page.locator('.preview-scroll .error-copy').innerText()
     assert.doesNotMatch(copy, /PRIVATE/); evidence.push({ fault, copy }); await page.close()
   }

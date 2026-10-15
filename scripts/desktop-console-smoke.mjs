@@ -20,7 +20,7 @@ const setup = async viewport => {
   await page.goto(url)
   await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor()
   await page.locator('input[type=file]').setInputFiles({ name:filename, mimeType:'application/pdf', buffer:bytes })
-  await page.waitForFunction(() => document.body.textContent.includes('Extraction complete'), null, { timeout:60000 })
+  await page.waitForFunction(() => document.body.textContent.includes('Ready to read'), null, { timeout:60000 })
   await page.locator('canvas').waitFor()
   return page
 }
@@ -39,7 +39,7 @@ for (const viewport of [{width:1024,height:768},{width:1100,height:800},{width:1
   const label = `${viewport.width}x${viewport.height}`
   const page = await setup(viewport)
   await page.screenshot({ path:`${artifacts}/${label}.png` })
-  await page.getByRole('button', { name:'Analyze Characters' }).click()
+  await page.getByRole('button', { name:'Find character voices' }).click()
   // Adversarial DOM-only growth beyond the product's six-speaker cap. No synthetic API data.
   await page.locator('.speaker-list ul').evaluate(ul => {
     const template = ul.firstElementChild
@@ -128,7 +128,7 @@ if (phase !== 'before') {
   await page.waitForTimeout(400)
   const fitted=await page.evaluate(()=>{const c=document.querySelector('canvas'),v=document.querySelector('.preview-scroll');return {canvas:c.getBoundingClientRect().width,viewer:v.clientWidth,scrollWidth:v.scrollWidth}})
   check(fitted.scrollWidth===fitted.viewer, 'Desktop fit-width overflow')
-  await page.getByRole('button',{name:'Analyze Characters'}).click()
+  await page.getByRole('button',{name:'Find character voices'}).click()
   await page.locator('.document-details summary').click()
   await page.locator('.engine-details summary').click()
   await page.locator('.diagnostics-panel summary').click()

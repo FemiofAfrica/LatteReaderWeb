@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 const PAGE_COUNT = 341
 const base = process.env.LATTE_READER_URL ?? 'http://127.0.0.1:4176/'
 const origin = new URL(base).origin
-const log = resolve('.runtime/diagnostics/events.jsonl')
+const log = resolve(process.env.LATTE_DIAGNOSTICS_DIR || '.runtime/diagnostics', 'events.jsonl')
 
 function buildPdf(count) {
   const fontObj = 3 + count * 2
@@ -67,23 +67,24 @@ page.on('request', r => { if (r.method() === 'POST') posts.push(r.url()) })
 page.on('requestfailed', r => { if (r.method() === 'POST') posts.push('FAILED:' + (r.failure()?.errorText ?? 'unknown')) })
 const timeline = []
 let last = ''
-const sample = async () => { const text = await page.locator('.diagnostics-panel summary').innerText().catch(() => ''); if (text && text !== last) { timeline.push(text); last = text } }
+const sample = async () => { const text = await page.locator('.diagnostics-controls p').nth(1).textContent().catch(() => ''); if (text && text !== last) { timeline.push(text); last = text } }
 try {
   await page.goto(base)
+  await page.locator('.diagnostics-panel summary').click()
   await page.getByRole('heading', { name: 'Choose a PDF to begin' }).waitFor({ timeout: 15000 })
   await page.locator('input[type=file]').setInputFiles(fixture)
   const started = Date.now()
   let complete = false
   while (Date.now() - started < 90000) {
     await sample()
-    if (!complete && await page.getByText('Extraction complete', { exact: true }).count()) complete = true
+    if (!complete && await page.getByText('Ready to read', { exact: true }).count()) complete = true
     if (complete && Date.now() - started > 30000) break
     await page.waitForTimeout(100)
   }
   await sample()
   assert(complete, 'Extraction did not complete')
-  const finalStatus = await page.locator('.diagnostics-panel summary').innerText()
-  assert(finalStatus.includes('private live'), `Strip did not read live after a successful extraction: ${finalStatus}`)
+  const finalStatus = await page.locator('.diagnostics-controls p').nth(1).textContent()
+  assert(finalStatus.includes('Reports are shared for this private test.'), `Strip did not read live after a successful extraction: ${finalStatus}`)
 
   const rows = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   // This smoke always uploads the fixture it just built, so its session has an upload.replaced
