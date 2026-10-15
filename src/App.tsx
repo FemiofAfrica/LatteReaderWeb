@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { openConsentSettings, track } from './analytics/analytics'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { PdfCanvas } from './components/PdfCanvas'
 import { analyzeDocument, retainVoiceChoices, type DocumentVoicePlan } from './domain/analysis'
@@ -98,6 +99,11 @@ function App() {
   const localRef = useRef<LocalNarratorEngine | null>(null)
   const [engine, setEngine] = useState('browser')
   const [localStatus, setLocalStatus] = useState<LocalStatus>('off')
+  const localStatusRef = useRef<LocalStatus>('off')
+  useEffect(() => {
+    if (localStatusRef.current === 'preparing' && localStatus === 'ready') track('voice_download_completed')
+    localStatusRef.current = localStatus
+  }, [localStatus])
   const mobileBarRef = useRef<HTMLElement>(null)
   const topbarRef = useRef<HTMLElement>(null)
   const previewScrollRef = useRef<HTMLDivElement>(null)
@@ -411,6 +417,7 @@ function App() {
     })
     setUploadFailure(failure)
     if (failure) setUploadError(failure.message)
+    else track('pdf_opened')
   }
 
   useEffect(() => {
@@ -573,6 +580,7 @@ function App() {
     setPosition(null); pendingSeekRef.current = null
     clearWait()
     setNarratorNotice(false)
+    track('play_started', { voice_type: engine === 'local' ? 'natural' : 'browser' })
     runRef.current = { pages: 0, started: performance.now() }
 
     followingRef.current = true
@@ -763,7 +771,7 @@ function App() {
             </div>
             <button className="primary-button" onClick={openPicker} disabled={isRestoring}>Open a PDF</button>
             <p className="privacy-note">Your PDF stays in this browser and returns when you reopen the app. A new PDF replaces it. Your PDF is never uploaded.</p>
-            <p className="credit-note"><a href="https://iririlabs.com/work/lattereader">Built by IRIRI Labs</a></p>
+            <p className="credit-note"><a href="https://iririlabs.com/work/lattereader" onClick={() => track('credit_click')}>Built by IRIRI Labs</a><span aria-hidden="true"> · </span><button type="button" className="link-button" onClick={openConsentSettings}>Cookie settings</button><span aria-hidden="true"> · </span><a href="/voice/notices/index.html#privacy">Privacy</a></p>
             {uploadError.includes('could not be restored') && <button className="delete-button compact-delete" onClick={() => { if (window.confirm('Delete the saved PDF and all reader data from this browser?')) void deleteLocalData() }}>Delete saved PDF</button>}
             {uploadFailure?.code === 'document-open' && <button className="primary-button" onClick={openPicker}>Open the file again</button>}
           </section>
@@ -790,6 +798,7 @@ function App() {
                       <button className="delete-button" onClick={() => {
                         if (window.confirm('Delete the current PDF and all saved reader data from this browser?')) void deleteLocalData()
                       }}>Delete saved PDF</button>
+                      <p className="panel-copy"><button type="button" className="link-button" onClick={openConsentSettings}>Cookie settings</button></p>
                     </div>
                   </details>
                 </section>
@@ -803,7 +812,7 @@ function App() {
                       <LocalNarratorNotices />
                       <p className="panel-copy">Your PDF, selected text and audio stay on this device.</p>
                       <p className="panel-copy">Highlights follow short passages, not each word. Keep the app open while listening.</p>
-                      <button type="button" className="secondary-button" disabled={localStatus !== 'off' && localStatus !== 'error'} onClick={() => void localRef.current?.prepare()}>Download voice</button>
+                      <button type="button" className="secondary-button" disabled={localStatus !== 'off' && localStatus !== 'error'} onClick={() => { track('voice_download_started'); void localRef.current?.prepare() }}>Download voice</button>
                       <button type="button" className="secondary-button" onClick={() => { stop(); localRef.current?.dispose() }}>Turn off voice</button>
                       <p className="panel-copy" role="status" data-local-status={localStatus}>{localVoiceCopy(localStatus)}</p>
                     </>}

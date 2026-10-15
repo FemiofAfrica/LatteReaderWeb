@@ -17,6 +17,9 @@ page.on('pageerror', (error) => failures.push(`Uncaught browser error: ${error.m
 
 // Every utterance completes on its own after a short delay, so a continuous run advances
 // without any further taps. Speech is mocked; audibility is not claimed.
+// The analytics consent banner is covered by its own tests; answer it up front so it
+// does not sit over the layout this smoke measures.
+await page.addInitScript(() => { try { localStorage.setItem('latte-analytics-consent', 'denied') } catch {} })
 await page.addInitScript(() => {
   class TestUtterance {
     constructor(text) { this.text = text; this.rate = 1; this.voice = null; this.onend = null; this.onerror = null }
