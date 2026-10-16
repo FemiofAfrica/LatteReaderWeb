@@ -30,6 +30,8 @@ import { BrowserSpeechEngine, type SpeechEngine } from './speech/SpeechEngine'
 import { LocalNarratorEngine, type LocalStatus } from './speech/LocalNarratorEngine'
 import { LocalNarratorNotices } from './components/LocalNarratorNotices'
 import { NARRATOR_COMPONENT_BYTES } from './speech/local/narratorAssets'
+import { hasCachedNarrator, removeNarratorCaches, requestPersistentStorage } from './speech/local/narratorCache'
+import { readVoicePreference, saveVoicePreference, type VoiceMode } from './speech/voicePreference'
 import './speech/local-narrator.css'
 import { watchBrowserVoices, type VoiceListState } from './speech/browserVoices'
 import { VoiceChooser } from './components/VoiceChooser'
@@ -95,13 +97,26 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const extractionWorkerRef = useRef<Worker | null>(null)
   const resetVoicesRef = useRef(false)
-  const speechRef = useRef<SpeechEngine>(new BrowserSpeechEngine())
-  const localRef = useRef<LocalNarratorEngine | null>(null)
-  const [engine, setEngine] = useState('browser')
+  // The voice choice survives reloads: a reader who picked Natural voice comes back to it.
+  const [initialVoice] = useState(readVoicePreference)
+  const [engine, setEngine] = useState<VoiceMode>(initialVoice.engine)
   const [localStatus, setLocalStatus] = useState<LocalStatus>('off')
   const localStatusRef = useRef<LocalStatus>('off')
+  const localRef = useRef<LocalNarratorEngine | null>(null)
+  const speechRef = useRef<SpeechEngine>(null as unknown as SpeechEngine)
+  if (!speechRef.current) {
+    if (initialVoice.engine === 'local') { localRef.current = new LocalNarratorEngine(setLocalStatus); speechRef.current = localRef.current }
+    else speechRef.current = new BrowserSpeechEngine()
+  }
+  // null while unknown; true once every current voice file is stored on this device.
+  const [voiceCached, setVoiceCached] = useState<boolean | null>(null)
   useEffect(() => {
-    if (localStatusRef.current === 'preparing' && localStatus === 'ready') track('voice_download_completed')
+    // Only a load that really fetched files from the network counts as a download.
+    if (localStatusRef.current === 'preparing' && localStatus === 'ready' && (localRef.current?.downloadedFiles ?? 0) > 0) {
+      track('voice_download_completed')
+      void requestPersistentStorage()
+      void hasCachedNarrator().then(setVoiceCached)
+    }
     localStatusRef.current = localStatus
   }, [localStatus])
   const mobileBarRef = useRef<HTMLElement>(null)
@@ -142,7 +157,8 @@ function App() {
   const [fitZoom, setFitZoom] = useState<number | null>(null)
   const [manualZoom, setManualZoom] = useState(false)
   const [fitRequested, setFitRequested] = useState(false)
-  const [speed, setSpeed] = useState(1)
+  const [speed, setSpeed] = useState(initialVoice.speed ?? 1)
+  useEffect(() => { saveVoicePreference({ speed }) }, [speed])
   const [readScope, setReadScope] = useState<ReadScope>('document')
   const [defaultVoiceKey, setDefaultVoiceKey] = useState<string | undefined>()
   const [voiceList, setVoiceList] = useState<VoiceListState>({ voices: [], status: 'loading' })
@@ -209,6 +225,23 @@ function App() {
   useEffect(() => () => {
     extractionWorkerRef.current?.terminate()
   }, [])
+
+  // Natural voice selected (now or on a previous visit): load it from this device's
+  // voice cache with no network at all. If the files are missing, e.g. the browser
+  // cleared site data, nothing downloads by itself; the Download prompt shows instead.
+  const hasDocument = !!documentState
+  useEffect(() => {
+    if (engine !== 'local') return
+    let live = true
+    void hasCachedNarrator().then(cached => {
+      if (!live) return
+      setVoiceCached(cached)
+      const local = localRef.current
+      if (!cached || !hasDocument || !local || local.status !== 'off') return
+      void local.prepare({ allowNetwork: false }).then(result => { if (result === 'not-cached') setVoiceCached(false) })
+    })
+    return () => { live = false }
+  }, [engine, hasDocument])
 
   useEffect(() => {
     if (!isMobile) {
@@ -552,6 +585,7 @@ function App() {
     pagesWithReadableText: documentState?.pagesWithReadableText ?? 0,
     engine: engine === 'local' ? 'local' : 'browser',
     localStatus,
+    voiceCached: !!voiceCached,
     voiceAvailable: speechRef.current.available,
     playback: { status: playback.status, display: playback.display },
   })
@@ -651,8 +685,10 @@ function App() {
     dispatchPlayback({ type: 'STOP' })
   }
 
-  const chooseEngine = (choice: string) => {
+  const chooseEngine = (value: string) => {
+    const choice: VoiceMode = value === 'local' ? 'local' : 'browser'
     stop(); localRef.current?.dispose()
+    saveVoicePreference({ engine: choice })
     setEngine(choice); setSessionChunks(null); sessionRef.current = null
     if (choice === 'local') {
       const local = new LocalNarratorEngine(setLocalStatus)
@@ -808,13 +844,13 @@ function App() {
                   <div className="local-narrator-controls">
                     <label>Reading voice <select aria-label="Reading voice" value={engine} onChange={event => chooseEngine(event.target.value)}><option value="browser">Browser voice</option><option value="local">Natural voice</option></select></label>
                     {engine === 'local' && <>
-                      <p className="panel-copy">{`English only. Download about ${(NARRATOR_COMPONENT_BYTES / 1000000).toFixed(1)} MB from this site.`}</p>
+                      <p className="panel-copy" data-voice-cached={voiceCached ? 'true' : 'false'}>{voiceCached ? 'English only. Downloaded and saved on this device.' : `English only. Download about ${(NARRATOR_COMPONENT_BYTES / 1000000).toFixed(1)} MB from this site, once.`}</p>
                       <LocalNarratorNotices />
                       <p className="panel-copy">Your PDF, selected text and audio stay on this device.</p>
                       <p className="panel-copy">Highlights follow short passages, not each word. Keep the app open while listening.</p>
-                      <button type="button" className="secondary-button" disabled={localStatus !== 'off' && localStatus !== 'error'} onClick={() => { track('voice_download_started'); void localRef.current?.prepare() }}>Download voice</button>
+                      <button type="button" className="secondary-button" disabled={localStatus !== 'off' && localStatus !== 'error'} onClick={() => { if (!voiceCached) track('voice_download_started'); void localRef.current?.prepare() }}>{voiceCached ? 'Turn on voice' : 'Download voice'}</button>
                       <button type="button" className="secondary-button" onClick={() => { stop(); localRef.current?.dispose() }}>Turn off voice</button>
-                      <p className="panel-copy" role="status" data-local-status={localStatus}>{localVoiceCopy(localStatus)}</p>
+                      <p className="panel-copy" role="status" data-local-status={localStatus}>{localVoiceCopy(localStatus, !!voiceCached)}</p>
                     </>}
                   </div>
                   <div className="engine-readout"><span className="status-led ready" aria-hidden="true" /><strong>{engine === 'local' ? 'Natural voice' : 'Browser voice'}</strong></div>
@@ -825,7 +861,7 @@ function App() {
                   <p className="panel-copy">Choose a browser voice or keep the default.</p>
                   <details className="engine-details"><summary>About browser voices</summary><p className="panel-copy" tabIndex={0}>The default uses an English voice when available. Changes apply next time you press Play. Some browser voices use the internet. If reading is silent, add a voice in your browser settings.</p></details>
                   </>}
-                  {engine === 'local' && <details className="engine-details"><summary>About this voice</summary><p className="panel-copy">Voice files may download again when you turn it on.</p><p className="panel-copy">Browser and character voice choices are saved but apply only to Browser voice.</p><button type="button" className="secondary-button restore-default" onClick={() => void restoreBrowserDefault()}>Use browser voice</button></details>}
+                  {engine === 'local' && <details className="engine-details"><summary>About this voice</summary><p className="panel-copy">After the first download the voice is saved on this device and opens without downloading again. A voice update downloads once.</p>{voiceCached && <button type="button" className="secondary-button" onClick={() => { stop(); localRef.current?.dispose(); setVoiceCached(false); void removeNarratorCaches() }}>Remove voice from this device</button>}<p className="panel-copy">Browser and character voice choices are saved but apply only to Browser voice.</p><button type="button" className="secondary-button restore-default" onClick={() => void restoreBrowserDefault()}>Use browser voice</button></details>}
                 </section>
 
                 <section className="bezel" data-panel="voices">

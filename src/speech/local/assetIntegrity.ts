@@ -64,10 +64,12 @@ export async function fetchPartsVerified(
   whole: AssetPins & { name: string },
   resolve: (path: string) => string,
   fetcher: Fetcher = fetch,
+  /** How one verified part is obtained; defaults to a network fetch. The device cache plugs in here. */
+  load: (url: string, pins: AssetPins) => Promise<ArrayBuffer> = (url, pins) => fetchVerified(url, pins, fetcher),
 ): Promise<ArrayBuffer> {
   if (!parts.length) throw Error(`PART_ORDER:${whole.name}`)
   const buffers: ArrayBuffer[] = []
-  for (const part of parts) buffers.push(await fetchVerified(resolve(part.path), part, fetcher))
+  for (const part of parts) buffers.push(await load(resolve(part.path), part))
   const joined = new Uint8Array(whole.bytes)
   let at = 0
   for (const buffer of buffers) {
