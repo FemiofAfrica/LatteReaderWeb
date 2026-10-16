@@ -17,6 +17,8 @@ export interface ReadingStatusInput {
   localStatus: LocalVoiceStatus
   /** The engine reports itself usable only once a voice is actually loaded. */
   voiceAvailable: boolean
+  /** The Natural voice files are already stored on this device. */
+  voiceCached?: boolean
   playback: { status: 'ready' | 'playing' | 'paused'; display?: PlaybackDisplay }
 }
 
@@ -28,7 +30,7 @@ export function readingStatusText(input: ReadingStatusInput): string {
     if (input.localStatus === 'preparing') return 'Preparing voice…'
     if (input.localStatus === 'buffering') return 'Preparing reading…'
     if (input.localStatus === 'error') return 'Voice unavailable'
-    if (input.localStatus === 'off' && input.pagesWithReadableText) return 'Download voice first'
+    if (input.localStatus === 'off' && input.pagesWithReadableText) return input.voiceCached ? 'Turn on voice first' : 'Download voice first'
     // A loaded voice with nothing playing invites playback. "Stopped" reads like
     // a fault, and switches to the local engine stop playback by design.
     if (input.localStatus === 'ready'
@@ -44,8 +46,10 @@ export function readingStatusText(input: ReadingStatusInput): string {
 }
 
 /** Plain-language panel line for the private local narrator. */
-export function localVoiceCopy(localStatus: LocalVoiceStatus): string {
+export function localVoiceCopy(localStatus: LocalVoiceStatus, saved = false): string {
   if (localStatus === 'ready') return 'Press play to begin'
+  if (saved && localStatus === 'preparing') return 'Loading voice from this device…'
+  if (saved && localStatus === 'off') return 'Voice saved on this device. Turn it on to begin'
   if (localStatus === 'error') return 'Could not use this voice. Try again or choose Browser voice.'
   if (localStatus === 'preparing') return 'Preparing voice… This may take a minute.'
   return ({off: 'Download the voice to begin', buffering: 'Preparing reading…', playing: 'Reading', paused: 'Paused'} as const)[localStatus]
