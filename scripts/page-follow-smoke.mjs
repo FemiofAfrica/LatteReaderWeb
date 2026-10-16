@@ -75,7 +75,9 @@ async function run(mode, { startPage = 1, pauseResume = false, boundaries = true
     const now = await shown()
     if (seen.at(-1) !== now) seen.push(now)
     // 'Go to page' and the reading position slider move with it.
-    if (Number(await p.getByLabel('Go to page').first().inputValue()) !== now) jumpMismatch = true
+    // Read both in one snapshot so a page turn between two round trips can't look like a mismatch.
+    const pair = await p.evaluate(() => [document.querySelector('output[aria-label="Current page"]')?.textContent.match(/\d+/)?.[0], document.querySelector('input[aria-label="Go to page"], .page-jump input')?.value])
+    if (pair[0] !== pair[1]) jumpMismatch = true
     const pct = await percent(); if (pct < lastPercent) sliderBack = true; lastPercent = pct
     if (mode === 'browser') {
       // Which page is the voice actually saying? The last "Page N" tag it has passed.
