@@ -30,33 +30,44 @@ await page.addInitScript(() => {
 })
 const ready = () => page.waitForFunction(() => document.body.textContent.includes('Ready to read'))
 const pageNumber = () => page.getByLabel('Current page').innerText()
+// Speech callbacks arrive outside React events, so the page re-renders on the next
+// scheduler tick (a few ms), not synchronously; wait for it instead of racing it.
+const expectPage = async (pattern, message) => {
+  const deadline = Date.now() + 2000
+  while (!pattern.test(await pageNumber()) && Date.now() < deadline) await page.waitForTimeout(20)
+  assert.match(await pageNumber(), pattern, message)
+}
 await page.goto(url)
 await page.locator('input[type=file]').setInputFiles('tests/fixtures/reading-quality.pdf')
 await ready()
 await page.getByRole('button', { name: 'Start reading' }).click()
 const inputs = await page.evaluate(() => window.__inputs)
-assert.deepEqual(inputs, ['f ff fi fl ffi ffl ff fi fl ffi ffl “fine” Five fine friends find fresh coffee. A well-known difference.'])
-assert.match(await pageNumber(), /^1/)
+// The sentence that runs over the page break stays one utterance; the next utterance starts
+// on page 2, so voices without boundary events still turn the page on time.
+assert.deepEqual(inputs, ['f ff fi fl ffi ffl ff fi fl ffi ffl “fine” Five fine friends find fresh coffee.'])
+await expectPage(/^1/)
 await page.evaluate(() => window.__current.onboundary({ charIndex: window.__current.text.indexOf('find fresh') }))
-assert.match(await pageNumber(), /^2/)
+await expectPage(/^2/)
 await page.getByRole('button', { name: 'Pause reading' }).click()
 await page.getByRole('button', { name: 'Resume reading' }).click()
 const beforeBrowse = await page.evaluate(() => window.__cancels)
 await page.getByRole('button', { name: 'Previous page' }).click()
-assert.match(await pageNumber(), /^1/)
+await expectPage(/^1/)
 assert.equal(await page.getByRole('button', { name: 'Pause reading' }).count(), 1)
 await page.evaluate(() => window.__current.onboundary({ charIndex: 70 }))
-assert.match(await pageNumber(), /^1/) // browsing suspends follow, not speech
+await page.waitForTimeout(200); assert.match(await pageNumber(), /^1/) // browsing suspends follow, not speech
 assert.equal(await page.evaluate(() => window.__cancels), beforeBrowse)
 await page.getByRole('button', { name: 'Follow reading' }).click()
-assert.match(await pageNumber(), /^2/)
+await expectPage(/^2/)
 await page.getByRole('button', { name: 'Stop reading' }).click()
 await page.getByLabel('Go to page').fill('1')
 await page.getByRole('button', { name: 'Start reading' }).click()
 const cancels = await page.evaluate(() => window.__cancels)
 await page.evaluate(() => window.__current.onend())
-assert.match(await pageNumber(), /^2/)
+await expectPage(/^2/)
 assert.equal(await page.evaluate(() => window.__cancels), cancels)
+assert.equal(await page.evaluate(() => window.__inputs.at(-1)), 'A well-known difference.') // the next utterance starts on page 2
+await page.evaluate(() => window.__current.onend())
 await page.getByLabel('Go to page').fill('1')
 await page.getByRole('radio', { name: 'This page only' }).check()
 await page.getByRole('button', { name: 'Start reading' }).click()
@@ -125,7 +136,7 @@ await page.getByRole('button', { name: 'Next page' }).click()
 await page.evaluate(() => window.__releaseExtraction())
 await ready(); await page.waitForTimeout(350)
 assert.equal(await page.evaluate(() => window.__inputs.length), beforeJump + 1)
-assert.match(await pageNumber(), /^2/) // waiting run starts from its captured source page, without snapping back
+await expectPage(/^2/) // waiting run starts from its captured source page, without snapping back
 await page.getByRole('button', { name: 'Stop reading' }).click()
 await writeFile(`${artifacts}/evidence.json`, JSON.stringify({ fixtureInputs:inputs, measurements, speech:'Exact API inputs verified with synthesis harness, not audible output.', unmapped:'Owned damaged ToUnicode fixture detected; no guessed letters.' }, null, 2))
 await browser.close()
