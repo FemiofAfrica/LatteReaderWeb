@@ -35,6 +35,7 @@
     "typecheck": "tsc -b --pretty false",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "test:consent-banner": "node scripts/consent-banner-smoke.mjs",
     "test:page-follow": "python3 tests/fixtures/generate_page_follow_fixture.py && node scripts/page-follow-smoke.mjs"
   },
   "dependencies": {

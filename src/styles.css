@@ -589,12 +589,24 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   .mobile-page { display: none; }
 }
 
-/* Analytics consent: small, quiet, and never covers the reading controls for long. */
-.consent-banner { position: fixed; z-index: 90; inset-inline-end: 16px; bottom: calc(16px + var(--mobile-bar-height, 0px) + env(safe-area-inset-bottom, 0px)); max-width: min(380px, calc(100vw - 32px)); padding: 14px 16px; border: 1px solid var(--crema); border-radius: 12px; background: var(--chrome); color: var(--foam); box-shadow: 0 10px 30px rgba(0,0,0,.35); font-size: 13px; line-height: 1.45; }
-.consent-banner p { margin: 0 0 10px; }
-.consent-actions { display: flex; gap: 8px; justify-content: flex-end; }
+/* Analytics consent: a compact full-width bar along the bottom edge. The page reserves
+   its measured height (--consent-space, set by ConsentBanner) so the bar sits beside the
+   reader's controls, never on top of them. */
+.consent-banner { position: fixed; z-index: 90; inset-inline: 0; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 2px solid var(--caramel); background: var(--roast); color: var(--cream); box-shadow: 0 -8px 22px rgba(0,0,0,.45); font-size: 14px; line-height: 1.4; }
+.consent-banner p { margin: 0; }
+.consent-actions { display: flex; gap: 8px; }
 .consent-actions .secondary-button { min-height: 36px; padding: 6px 14px; }
 .consent-actions .consent-accept { border-color: var(--caramel); }
 .link-button { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; border-bottom: 1px solid transparent; }
 .link-button:hover, .link-button:focus-visible { color: var(--butter); border-bottom-color: currentColor; }
-@media (max-width: 640px) { .consent-banner { inset-inline: 12px; bottom: calc(12px + var(--mobile-bar-height, 0px) + env(safe-area-inset-bottom, 0px)); max-width: none; } }
+/* Desktop is one viewport-bound console: shrink it by the bar's height. */
+@media (min-width: 781px) and (min-height: 601px) { .ambient-shell { height: calc(100dvh - var(--consent-space, 0px)); } }
+/* Mobile: the bar stacks directly above the fixed reader bar, and the page gets extra
+   bottom room so anything under it can always be scrolled clear. */
+@media (max-width: 780px), (max-height: 600px) {
+  .consent-banner { bottom: var(--mobile-bar-height, 0px); padding-inline: 12px; justify-content: space-between; }
+  .consent-banner p { flex: 1 1 200px; }
+  .reader-deck { padding-bottom: calc(var(--mobile-bar-height, 88px) + var(--consent-space, 0px) + env(safe-area-inset-bottom, 0px)); }
+  /* Focus and scroll-into-view stop above both fixed bars, not behind them. */
+  html { scroll-padding-bottom: calc(var(--mobile-bar-height, 0px) + var(--consent-space, 0px) + 8px); }
+}
