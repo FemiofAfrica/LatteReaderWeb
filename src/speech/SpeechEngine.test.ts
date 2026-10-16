@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { BrowserSpeechEngine } from './SpeechEngine'
+import { BrowserSpeechEngine, pageUtterances } from './SpeechEngine'
 import { planSpeechChunks } from '../domain/speechPlan'
 import { analyzeDocument } from '../domain/analysis'
 
@@ -96,5 +96,32 @@ describe('source-aware browser transport', () => {
     const engine = new BrowserSpeechEngine()
     engine.speak({ text: '“Five fine friends.”', rate: 1 })
     expect(utterances[0].text).toBe('“Five fine friends.”')
+  })
+})
+
+describe('page-aligned utterances', () => {
+  const pages = ['First page ends here. It runs on and on.', 'Second page starts. More text.', 'Third page.']
+  it('starts a new utterance on each page so voices without boundary events still turn the page', () => {
+    const chunks = planSpeechChunks(pages, 1, 'document')
+    expect(chunks).toHaveLength(1)
+    const parts = pageUtterances(chunks)
+    expect(parts.map(p => p.segment.text)).toEqual(['First page ends here. It runs on and on.', 'Second page starts. More text.', 'Third page.'])
+    expect(parts.map(p => p.segment.spans[0].pageNumber)).toEqual([1, 2, 3])
+    for (const part of parts) expect(chunks[0].text.slice(part.base, part.base + part.segment.text.length)).toBe(part.segment.text)
+  })
+  it('keeps a sentence that runs over a page break in one utterance', () => {
+    const parts = pageUtterances(planSpeechChunks(['The sentence starts here and', 'ends on page two. Then more.'], 1, 'document'))
+    expect(parts.map(p => p.segment.text)).toEqual(['The sentence starts here and ends on page two.', 'Then more.'])
+    expect(parts.map(p => p.segment.spans.at(-1)!.pageNumber)).toEqual([2, 2])
+  })
+  it('turns the page at the start of the next utterance and reports chunk offsets', () => {
+    const engine = new BrowserSpeechEngine(); const onPage = vi.fn(); const onPosition = vi.fn()
+    engine.speak({ text: '', rate: 1, chunks: planSpeechChunks(pages, 1, 'document'), onPage, onPosition })
+    expect(onPage.mock.calls.at(-1)).toEqual([1])
+    end(); expect(onPage.mock.calls.at(-1)).toEqual([2])
+    const second = utterances[1].text
+    expect(onPosition.mock.calls.at(-1)).toEqual([0, pages[0].length + 1, 'utterance'])
+    expect(second).toBe('Second page starts. More text.')
+    end(); expect(onPage.mock.calls.at(-1)).toEqual([3])
   })
 })

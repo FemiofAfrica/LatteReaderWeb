@@ -3,12 +3,13 @@
  * Misaki-derived English dictionaries and learned BART replace eSpeak.
  * No document content or audio is sent over the network.
  */
-import { fetchPartsVerified, fetchVerified, sha256Hex } from '../speech/local/assetIntegrity'
+import { fetchPartsVerified, sha256Hex, type AssetPins } from '../speech/local/assetIntegrity'
+import { loadVerified, removeOldNarratorCaches } from '../speech/local/narratorCache'
 import { containedPrepare, type PreparedText } from '../speech/local/prepareContained'
 import symbols from '../speech/local/kittenSymbols.json'
 import pins from '../speech/local/narratorPins.json'
 import { NARRATOR_BASE_PATH } from '../speech/local/narratorAssets'
-type Request = { op: 'init' | 'generate'; id: number; text: string; speed?: number }
+type Request = { op: 'init' | 'generate'; id: number; text: string; speed?: number; allowNetwork?: boolean }
 type Frontend = { prepare: (text: string, lex: unknown, symbols: unknown) => PreparedText }
 type Learned = { calls: unknown[] }
 type Tensor = { data: Float32Array; dims: number[]; dispose?: () => void }
@@ -17,7 +18,7 @@ type Ort = {
  Tensor: new (type: string, data: unknown, dims: number[]) => unknown
  InferenceSession: { create: (data: ArrayBuffer, options: Record<string, unknown>) => Promise<{ run: (feeds: Record<string, unknown>) => Promise<Record<string, Tensor>> }> }
 }
-const ERRORS = ['ASSET_UNAVAILABLE','SIZE_MISMATCH','HASH_MISMATCH','PART_ORDER','INVALID_VOICE','UNSUPPORTED_TEXT','TOKEN_LIMIT','INVALID_PCM','INVALID_REQUEST','INFERENCE_FAILED']
+const ERRORS = ['NOT_CACHED','ASSET_UNAVAILABLE','SIZE_MISMATCH','HASH_MISMATCH','PART_ORDER','INVALID_VOICE','UNSUPPORTED_TEXT','TOKEN_LIMIT','INVALID_PCM','INVALID_REQUEST','INFERENCE_FAILED']
 const base = new URL(NARRATOR_BASE_PATH, self.location.origin)
 const at = (path: string) => new URL(path, base).href
 let ort: Ort | null = null
@@ -33,6 +34,11 @@ async function moduleFrom(bytes: ArrayBuffer) {
 }
 async function start(request: Request) {
  const started = performance.now()
+ // Files come from this device's voice cache when present; the network is used only
+ // after the reader pressed Download (allowNetwork), never on a reload.
+ let downloadedFiles = 0
+ const options = { allowNetwork: request.allowNetwork === true, onNetwork: () => { downloadedFiles++ } }
+ const fetchVerified = (url: string, pin: AssetPins) => loadVerified(url, pin, options)
  const files = new Map<string, ArrayBuffer>()
  for (const pin of pins.phonemizer.files) files.set(pin.path.split('/').at(-1)!, await fetchVerified(at(pin.path), pin))
  const json = (name: string) => JSON.parse(new TextDecoder().decode(files.get(name)!))
@@ -49,10 +55,11 @@ async function start(request: Request) {
  ort.env.wasm.wasmPaths = { mjs: URL.createObjectURL(new Blob([glue], { type: 'text/javascript' })) }
  const wasm = await fetchVerified(at(pins.runtime.wasm.path), pins.runtime.wasm)
  ort.env.wasm.wasmBinary = new Uint8Array(wasm)
- const graph = await fetchPartsVerified(pins.graph.parts, pins.graph, at)
+ const graph = await fetchPartsVerified(pins.graph.parts, pins.graph, at, undefined, fetchVerified)
  verify = { graphSha256: await sha256Hex(graph), graphBytes: graph.byteLength, parts: pins.graph.parts.length, runtimeWasmSha256: await sha256Hex(wasm) }
  session = await ort.InferenceSession.create(graph, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
- self.postMessage({ id: request.id, ok: true, initMs: performance.now()-started, threads: 1, phonemizerComponent: pins.phonemizer.component, voiceSha256: pins.voice.sha256, ...verify })
+ if (downloadedFiles) await removeOldNarratorCaches()
+ self.postMessage({ id: request.id, ok: true, downloadedFiles, initMs: performance.now()-started, threads: 1, phonemizerComponent: pins.phonemizer.component, voiceSha256: pins.voice.sha256, ...verify })
 }
 async function generate(request: Request) {
  if (!session || !voice || !ort || !frontend || !learned || typeof request.text !== 'string') throw Error('INVALID_REQUEST')

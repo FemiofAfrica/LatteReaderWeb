@@ -63,8 +63,15 @@ export class LocalNarratorEngine implements SpeechEngine {
       this.worker!.postMessage({ op, id, ...fields })
     })
   }
-  async prepare() {
-    this.dispose(); this.state('preparing')
+  /** Files fetched from the network by the last successful prepare; 0 when it loaded from the device cache. */
+  downloadedFiles = 0
+  /**
+   * Load the voice. With allowNetwork false (a reload with Natural voice selected) it
+   * only uses files already stored on this device and resolves 'not-cached', back in
+   * the 'off' state, when any are missing, so nothing downloads without a Download press.
+   */
+  async prepare({ allowNetwork = true }: { allowNetwork?: boolean } = {}): Promise<'ready' | 'not-cached' | 'error' | 'cancelled'> {
+    this.dispose(); this.state('preparing'); this.downloadedFiles = 0
     const worker = builtWorker()
     this.worker = worker
     worker.onmessage = ({ data }) => {
@@ -81,20 +88,25 @@ export class LocalNarratorEngine implements SpeechEngine {
       }
     }
     try {
-      const init = await this.rpc('init')
-      if (worker !== this.worker) return
+      const init = await this.rpc('init', { allowNetwork })
+      if (worker !== this.worker) return 'cancelled'
+      this.downloadedFiles = Number(init.downloadedFiles) || 0
       this.prepared = true
       // Content-free: which pinned bytes the worker verified before it started,
       // and nothing about the document.
       window.dispatchEvent(new CustomEvent('latte-local-ready', { detail: init }))
       this.state('ready')
+      return 'ready'
     } catch (error) {
+      if (worker === this.worker && String((error as Error)?.message) === 'NOT_CACHED') { this.dispose(); return 'not-cached' }
       if (worker === this.worker) {
         // A fixed reason code and nothing else: no document text, no filename.
         window.dispatchEvent(new CustomEvent('latte-local-failed', { detail: { code: String((error as Error)?.message ?? error) } }))
         this.dispose()
         this.state('error')
+        return 'error'
       }
+      return 'cancelled'
     }
   }
   dispose() {

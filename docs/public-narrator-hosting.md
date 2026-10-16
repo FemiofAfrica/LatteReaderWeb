@@ -178,3 +178,17 @@ LATTE_READER_URL=http://127.0.0.1:4193/ npm run test:narrator
 LATTE_READER_URL=http://127.0.0.1:4193/ npm run test:compatibility
 LATTE_READER_URL=http://127.0.0.1:4193/ npm run voice:smoke
 ```
+
+## Keeping the voice on the device
+
+After the reader presses Download voice, each verified file is stored in Cache Storage under
+`latte-narrator-<fingerprint>`, where the fingerprint covers every pinned path, size and SHA-256.
+Later visits load the voice from that cache with no network request; bytes read back are verified
+again before use. A new model or voice changes the fingerprint, so it downloads once and the old
+cache is deleted. After a real download the app calls `navigator.storage.persist()`.
+
+The voice mode (Browser or Natural), the Natural voice id and the reading speed are kept in
+localStorage (`latte-voice-preference`). On reload with Natural selected and the files cached, the
+voice loads from the device; if the files are gone it never downloads by itself and shows the
+Download voice prompt again. Pages serves `/voice/narrator/*` with `max-age=0, must-revalidate`,
+which is why the HTTP cache alone was not enough. `scripts/voice-persistence-smoke.mjs` checks all of this.
