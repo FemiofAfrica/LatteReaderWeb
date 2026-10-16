@@ -34,7 +34,8 @@
     "test:plain-ui": "node scripts/plain-ui-smoke.mjs",
     "typecheck": "tsc -b --pretty false",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:page-follow": "python3 tests/fixtures/generate_page_follow_fixture.py && node scripts/page-follow-smoke.mjs"
   },
   "dependencies": {
     "pdfjs-dist": "^6.4.299",
