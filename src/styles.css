@@ -592,7 +592,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 /* Analytics consent: a compact full-width bar along the bottom edge. The page reserves
    its measured height (--consent-space, set by ConsentBanner) so the bar sits beside the
    reader's controls, never on top of them. */
-.consent-banner { position: fixed; z-index: 90; inset-inline: 0; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--crema); background: var(--chrome); color: var(--foam); box-shadow: 0 -6px 18px rgba(0,0,0,.3); font-size: 13px; line-height: 1.4; }
+.consent-banner { position: fixed; z-index: 90; inset-inline: 0; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 2px solid var(--caramel); background: var(--roast); color: var(--cream); box-shadow: 0 -8px 22px rgba(0,0,0,.45); font-size: 14px; line-height: 1.4; }
 .consent-banner p { margin: 0; }
 .consent-actions { display: flex; gap: 8px; }
 .consent-actions .secondary-button { min-height: 36px; padding: 6px 14px; }
