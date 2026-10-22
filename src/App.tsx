@@ -29,8 +29,12 @@ import { ReadingProgress } from './components/ReadingProgress'
 import { BrowserSpeechEngine, type SpeechEngine } from './speech/SpeechEngine'
 import { LocalNarratorEngine, type LocalStatus } from './speech/LocalNarratorEngine'
 import { LocalNarratorNotices } from './components/LocalNarratorNotices'
+import { AudioReadyBar } from './components/AudioReadyBar'
+import { PageJump } from './components/PageJump'
 import { NARRATOR_COMPONENT_BYTES } from './speech/local/narratorAssets'
 import { hasCachedNarrator, removeNarratorCaches, requestPersistentStorage } from './speech/local/narratorCache'
+import { clearAudioCache } from './speech/audioCache'
+import type { AudioReadyProgress } from './speech/audioReady'
 import { readVoicePreference, saveVoicePreference, type VoiceMode } from './speech/voicePreference'
 import './speech/local-narrator.css'
 import { watchBrowserVoices, type VoiceListState } from './speech/browserVoices'
@@ -144,6 +148,9 @@ function App() {
   }, [currentPage, documentState?.id, readAlong])
   const [position, setPosition] = useState<ReadingPosition | null>(null)
   const [readingOffset, setReadingOffset] = useState(0)
+  const readingOffsetRef = useRef(0)
+  readingOffsetRef.current = readingOffset
+  const [audioReady, setAudioReady] = useState<AudioReadyProgress | null>(null)
   const [sessionChunks, setSessionChunks] = useState<SpeechChunk[] | null>(null)
   const sessionRef = useRef<SpeechChunk[] | null>(null)
   const sessionScopeRef = useRef<ReadScope>('document')
@@ -315,6 +322,9 @@ function App() {
     runRef.current = { pages: 0, started: 0 }
     readingPageRef.current = 0
     speechRef.current.stop()
+    localRef.current?.resetAudio()
+    setAudioReady(null)
+    void clearAudioCache()
     dispatchPlayback({ type: 'RESET' })
     extractionWorkerRef.current?.terminate()
     if (pdf) await pdf.cleanup()
@@ -547,7 +557,22 @@ function App() {
     runRef.current = { pages: new Set(chunks.flatMap(c => c.spans.map(s => s.pageNumber))).size, started: performance.now() }
     readingPageRef.current = page
     dispatchPlayback({ type: 'PLAY', scope, page })
-    speechRef.current.speak({ text: '', chunks, rate: speedRef.current, voiceKey: defaultVoiceRef.current, onVoiceFallback: setVoiceFallback,
+    speechRef.current.speak({ text: '', chunks, rate: speedRef.current, voiceKey: defaultVoiceRef.current, title: documentRef.current?.name, documentId: documentRef.current?.id, onVoiceFallback: setVoiceFallback, onAudioProgress: setAudioReady,
+      onTransport: action => {
+        if (action === 'pause') dispatchPlayback({ type: 'PAUSE' })
+        if (action === 'resume') dispatchPlayback({ type: 'RESUME' })
+        if (action === 'stop') {
+          setVoiceFallback(false); setNarratorNotice(false); clearWait()
+          runRef.current = { pages: 0, started: 0 }; readingPageRef.current = 0
+          setPosition(null); pendingSeekRef.current = null
+          dispatchPlayback({ type: 'STOP' })
+        }
+      },
+      onMediaSkip: direction => {
+        const session = sessionRef.current
+        if (!session?.length) return
+        seekReading(sentenceSkip(readingTimeline(session), readingOffsetRef.current, direction))
+      },
       onPosition: (chunk, char, evidence, end) => {
         const offset = origin + remaining.starts[chunk] + char
         setReadingOffset(offset)
@@ -690,6 +715,7 @@ function App() {
     stop(); localRef.current?.dispose()
     saveVoicePreference({ engine: choice })
     setEngine(choice); setSessionChunks(null); sessionRef.current = null
+    setAudioReady(null)
     if (choice === 'local') {
       const local = new LocalNarratorEngine(setLocalStatus)
       localRef.current = local; speechRef.current = local
@@ -728,6 +754,9 @@ function App() {
       runRef.current = { pages: 0, started: 0 }
       readingPageRef.current = 0
       speechRef.current.stop()
+      localRef.current?.resetAudio()
+      setAudioReady(null)
+      await clearAudioCache()
       extractionWorkerRef.current?.terminate()
       if (pdf) await pdf.cleanup()
       await clearCurrentDocument()
@@ -825,6 +854,22 @@ function App() {
                   {documentState.extraction === 'extracting' && <progress aria-label="Preparing your PDF" value={extractionPercent} max="100" />}
                   {documentState.error && <p className="error-copy">{documentState.error}</p>}
                   {textWarning && <p className="warning-copy">{textWarning}</p>}
+                  {engine === 'local' && (
+                    <AudioReadyBar
+                      progress={audioReady}
+                      canPrepare={!!documentState.pagesWithReadableText && documentState.extraction === 'complete' && (localStatus === 'ready' || localStatus === 'playing' || localStatus === 'paused' || localStatus === 'buffering')}
+                      onPrepare={() => {
+                        if (!documentState || !localRef.current?.available) return
+                        void localRef.current.prepareDocument({
+                          chunks: planSpeechChunks(documentState.pages, 1, 'document', voicePlan),
+                          rate: speed,
+                          documentId: documentState.id,
+                          onProgress: setAudioReady,
+                        })
+                      }}
+                      onCancel={() => localRef.current?.cancelPrepare()}
+                    />
+                  )}
                   <p className="panel-copy">Saved here, not uploaded.</p>
                   <details className="document-details">
                     <summary>Saved PDF</summary>
@@ -847,7 +892,7 @@ function App() {
                       <p className="panel-copy" data-voice-cached={voiceCached ? 'true' : 'false'}>{voiceCached ? 'English only. Downloaded and saved on this device.' : `English only. Download about ${(NARRATOR_COMPONENT_BYTES / 1000000).toFixed(1)} MB from this site, once.`}</p>
                       <LocalNarratorNotices />
                       <p className="panel-copy">Your PDF, selected text and audio stay on this device.</p>
-                      <p className="panel-copy">Highlights follow short passages, not each word. Keep the app open while listening.</p>
+                      <p className="panel-copy">Highlights follow short passages, not each word. Once enough audio is ready, you can minimize and it will keep playing.</p>
                       <button type="button" className="secondary-button" disabled={localStatus !== 'off' && localStatus !== 'error'} onClick={() => { if (!voiceCached) track('voice_download_started'); void localRef.current?.prepare() }}>{voiceCached ? 'Turn on voice' : 'Download voice'}</button>
                       <button type="button" className="secondary-button" onClick={() => { stop(); localRef.current?.dispose() }}>Turn off voice</button>
                       <p className="panel-copy" role="status" data-local-status={localStatus}>{localVoiceCopy(localStatus, !!voiceCached)}</p>
@@ -892,18 +937,10 @@ function App() {
                       <button aria-label="Next page" disabled={currentPage >= documentState.pageCount} onClick={() => navigate(currentPage + 1)}><Icon name="next" /></button>
                     </div>
                     <progress aria-label="Document page progress" value={currentPage} max={documentState.pageCount || 1} />
-                    <label className="page-jump">Go to page
-                      <input
-                        type="number"
-                        min="1"
-                        max={documentState.pageCount}
-                        value={currentPage}
-                        onChange={(event) => navigate(Math.min(documentState.pageCount, Math.max(1, Number(event.target.value))))}
-                      />
-                    </label>
+                    <PageJump page={currentPage} pageCount={documentState.pageCount} onNavigate={navigate} showGoButton />
                   </div> : <div className="page-navigation" role="group" aria-label="Page navigation">
                     <button aria-label="Previous page" disabled={currentPage <= 1} onClick={() => navigate(currentPage - 1)}><Icon name="back" /></button>
-                    <label>Page <input aria-label="Go to page" type="number" inputMode="numeric" min="1" max={documentState.pageCount} value={currentPage} onChange={(event) => navigate(Math.min(documentState.pageCount, Math.max(1, Number(event.target.value))))} /></label>
+                    <PageJump page={currentPage} pageCount={documentState.pageCount} onNavigate={navigate} label="Page" className="" />
                     <output aria-label="Current page"><span className="visually-hidden">{currentPage}</span><span aria-hidden="true"> / </span>{documentState.pageCount}</output>
                     <button aria-label="Next page" disabled={currentPage >= documentState.pageCount} onClick={() => navigate(currentPage + 1)}><Icon name="next" /></button>
                   </div>}
@@ -950,6 +987,7 @@ function App() {
                   <button className="play-button" aria-label={playLabel} onClick={() => read()} disabled={!documentState.pagesWithReadableText || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
                 </div>
                 {progressControl}
+                {engine === 'local' && audioReady && <AudioReadyBar progress={audioReady} compact />}
                 <div className="playback-readout"><strong>{readingStatus}</strong><span>{playback.message}</span></div>
                 {rotaryControls}
               </footer>
@@ -958,6 +996,7 @@ function App() {
             {isMobile && (
               <nav className="mobile-bar" ref={mobileBarRef} aria-label="Reader panels and playback">
 
+                {engine === 'local' && audioReady && <AudioReadyBar progress={audioReady} compact />}
                 {progressControl}
                 <div className="mobile-tabs" role="tablist" aria-label="Reader panels">
                   {MOBILE_PANELS.map((panel) => (

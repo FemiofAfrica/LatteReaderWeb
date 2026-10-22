@@ -2,17 +2,23 @@ import { resolveVoice } from './browserVoices'
 import type { SpeechChunk } from '../domain/speechPlan'
 import { planSpeechChunks } from '../domain/speechPlan'
 import { recordEvent } from '../diagnostics/diagnostics'
+import type { AudioReadyProgress } from './audioReady'
 
 export interface SpeechRequest {
   text: string
   rate: number
   voiceKey?: string
   language?: string
+  title?: string
+  documentId?: string
   onVoiceFallback?: (fallback: boolean) => void
   chunks?: SpeechChunk[]
   onPosition?: (chunk: number, offset: number, evidence: 'boundary' | 'utterance' | 'audio-chunk', end?: number) => void
   onPage?: (page: number) => void
   onError?: () => void
+  onAudioProgress?: (progress: AudioReadyProgress) => void
+  onTransport?: (action: 'pause' | 'resume' | 'stop') => void
+  onMediaSkip?: (direction: -1 | 1) => void
 }
 /** One spoken utterance: a slice of a planned chunk, with spans relative to the slice. */
 export interface PageUtterance { chunk: number; base: number; segment: SpeechChunk }
