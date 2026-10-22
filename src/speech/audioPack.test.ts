@@ -27,6 +27,7 @@ describe('packed playback files', () => {
     const packed = packChunks(rest)
     expect(packed.contentDuration).toBe(2)
     expect(packed.slices).toHaveLength(2)
+    expect(packChunks(first).id).not.toBe(packed.id)
   })
 
   it('pads a short first file to five seconds without inventing spoken slices', () => {

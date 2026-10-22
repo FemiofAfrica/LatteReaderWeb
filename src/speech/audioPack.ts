@@ -9,6 +9,8 @@ export interface PackedSlice {
 }
 
 export interface PackedSegment {
+  /** Monotonic id so a stale `ended` cannot finish the same pack twice. */
+  id: number
   url: string
   /** File duration, including trailing silence used for a media notification. */
   duration: number
@@ -16,6 +18,8 @@ export interface PackedSegment {
   contentDuration: number
   slices: PackedSlice[]
 }
+
+let nextPackedId = 1
 
 export function packChunks(chunks: readonly EncodedChunk[], minDuration = 0): PackedSegment {
   const slices: PackedSlice[] = []
@@ -29,7 +33,7 @@ export function packChunks(chunks: readonly EncodedChunk[], minDuration = 0): Pa
   const duration = Math.max(contentDuration, minDuration)
   if (duration > contentDuration) wav = padWav(wav, duration)
   const blob = new Blob([wav], { type: 'audio/wav' })
-  return { url: URL.createObjectURL(blob), duration, contentDuration, slices }
+  return { id: nextPackedId++, url: URL.createObjectURL(blob), duration, contentDuration, slices }
 }
 
 /** The first spoken part, so playback can start without waiting for a long pack. */

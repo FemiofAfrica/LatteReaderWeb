@@ -33,7 +33,13 @@ class FakeAudio extends EventTarget {
   private _src = ''
   get src() { return this._src }
   set src(value: string) {
+    const previous = this._src
+    const wasPlaying = !this.paused && previous !== '' && previous !== value
     this._src = value
+    if (wasPlaying) {
+      this.dispatchEvent(new Event('pause'))
+      super.dispatchEvent(new Event('ended'))
+    }
     queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
   }
   play() { this.paused = false; this.playCalls += 1; return Promise.resolve() }
@@ -43,6 +49,10 @@ class FakeAudio extends EventTarget {
     this.dispatchEvent(new Event('pause'))
   }
   load() {}
+  dispatchEvent(event: Event): boolean {
+    if (event.type === 'ended' && this.currentTime < 0.05) this.currentTime = 99
+    return super.dispatchEvent(event)
+  }
   removeAttribute(name: string) { if (name === 'src') this._src = '' }
   remove() {}
 }
@@ -498,6 +508,47 @@ describe('prepared audio identity, bounds and progress', () => {
     audio.pause()
     await flush()
     expect(audio.paused).toBe(false)
+    engine.dispose()
+  })
+
+  it('plays each passage once and in order across packs, hide, and duplicate ended', async () => {
+    const producer = new ScriptedProducer()
+    const audio = new FakeAudio()
+    const onPosition = vi.fn()
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache: new AudioCache(), createAudio: () => audio as unknown as HTMLAudioElement,
+      lookaheadSeconds: 30, maxBufferedSeconds: 40, packTargetSeconds: 1,
+    })
+    const text = Array.from({ length: 6 }, (_, index) => `Sentence ${index} is unique.`).join(' ')
+    engine.speak({
+      text: '', rate: 1, documentId: 'doc-order',
+      chunks: planSpeechChunks([text], 1, 'document'),
+      onPosition, onPage: vi.fn(), onError: vi.fn(),
+    })
+    await flush(40)
+    audio.currentTime = 1
+    audio.dispatchEvent(new Event('timeupdate'))
+    await flush()
+    for (let time = 0.05; time < 6; time += 1) {
+      audio.currentTime = time
+      audio.dispatchEvent(new Event('timeupdate'))
+      await tick()
+    }
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    audio.pause()
+    await flush()
+    audio.dispatchEvent(new Event('ended'))
+    audio.dispatchEvent(new Event('ended'))
+    await flush()
+    const heard = onPosition.mock.calls
+      .filter(call => call[2] === 'audio-chunk')
+      .map(call => `${call[0]}:${call[1]}`)
+    expect(heard.length).toBeGreaterThan(1)
+    expect(new Set(heard).size).toBe(heard.length)
+    const starts = onPosition.mock.calls.filter(call => call[2] === 'audio-chunk').map(call => Number(call[1]))
+    expect(starts).toEqual([...starts].sort((a, b) => a - b))
     engine.dispose()
   })
 })

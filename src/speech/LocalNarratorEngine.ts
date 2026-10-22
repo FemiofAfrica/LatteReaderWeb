@@ -215,9 +215,6 @@ export class LocalNarratorEngine implements SpeechEngine {
   private playableSeconds() {
     return contentSeconds(this.unpacked) + this.queue.remaining
   }
-  private pageHidden() {
-    return typeof document !== 'undefined' && document.visibilityState === 'hidden'
-  }
   private currentRate() { return this.request?.rate ?? this.prepareRate }
   private partId(part: LocalPart, rate = this.currentRate()) {
     return cacheId(this.request?.documentId ?? this.documentId ?? '', this.producer.id, rate, part)
@@ -434,10 +431,6 @@ export class LocalNarratorEngine implements SpeechEngine {
       this.enqueuePacked(this.currentEncoded, MEDIA_NOTIFICATION_SECONDS)
       this.packBackground()
       return
-    }
-    if (!this.pageHidden() && this.currentEncoded.length && contentSeconds(this.currentEncoded) < MEDIA_NOTIFICATION_SECONDS && this.unpacked.length) {
-      this.currentEncoded.push(...this.unpacked.splice(0))
-      void this.queue.replaceCurrent(packChunks(this.currentEncoded, MEDIA_NOTIFICATION_SECONDS))
     }
     this.packBackground()
   }
