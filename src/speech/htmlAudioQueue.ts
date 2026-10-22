@@ -65,6 +65,7 @@ export class HtmlAudioQueue {
   get isEmpty(): boolean { return !this.current && !this.upcoming.length }
   get isPaused(): boolean { return this.paused }
   get currentSegment(): PackedSegment | null { return this.current }
+  get upcomingSegments(): readonly PackedSegment[] { return this.upcoming }
 
   enqueue(segment: PackedSegment): void {
     if (!this.current) this.current = segment
@@ -97,6 +98,7 @@ export class HtmlAudioQueue {
     if (!this.current && this.upcoming.length) this.current = this.upcoming.shift() ?? null
     if (!this.current) return
     if (this.audio.src !== this.current.url) await this.load(this.current, this.audio.currentTime || 0)
+    if (this.paused || !this.current) return
     await this.audio.play()
   }
 

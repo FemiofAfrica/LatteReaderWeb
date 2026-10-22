@@ -51,12 +51,16 @@ async function openDatabase(): Promise<IDBDatabase | null> {
 export class AudioCache {
   private memory = new Map<string, CachedAudio>()
 
+  get retained(): number { return this.memory.size }
+
   peek(id: string): EncodedChunk | undefined {
     const hit = this.memory.get(id)
     return hit?.wav.byteLength ? hit : undefined
   }
 
-  async get(id: string): Promise<EncodedChunk | undefined> {
+  release(id: string): void { this.memory.delete(id) }
+
+  async get(id: string, retain = true): Promise<EncodedChunk | undefined> {
     const memory = this.peek(id)
     if (memory) return memory
     const database = await openDatabase()
@@ -66,7 +70,7 @@ export class AudioCache {
       const stored = await requestResult(transaction.objectStore(AUDIO_CACHE_STORE).get(id)) as CachedAudio | undefined
       await transactionDone(transaction)
       if (!stored?.wav) return undefined
-      this.memory.set(id, stored)
+      if (retain) this.memory.set(id, stored)
       return stored
     } catch {
       return undefined
@@ -75,8 +79,9 @@ export class AudioCache {
     }
   }
 
-  async put(record: CachedAudio): Promise<void> {
-    this.memory.set(record.id, record)
+  async put(record: CachedAudio, retain = true): Promise<void> {
+    if (retain) this.memory.set(record.id, record)
+    else this.memory.delete(record.id)
     const database = await openDatabase()
     if (!database) return
     try {

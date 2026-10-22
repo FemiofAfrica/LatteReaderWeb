@@ -790,6 +790,12 @@ function App() {
 
   const playLabel = playback.status === 'playing' ? 'Pause reading' : playback.status === 'paused' ? 'Resume reading' : 'Start reading'
   const textWarning = documentState ? availabilityWarning(documentState) : ''
+  const naturalReady = engine === 'local' && (localStatus === 'ready' || localStatus === 'playing' || localStatus === 'paused' || localStatus === 'buffering')
+  const useNaturalVoice = () => {
+    if (engine !== 'local') chooseEngine('local')
+    if (!voiceCached) track('voice_download_started')
+    void localRef.current?.prepare()
+  }
 
   return (
     <main className="ambient-shell">
@@ -854,10 +860,10 @@ function App() {
                   {documentState.extraction === 'extracting' && <progress aria-label="Preparing your PDF" value={extractionPercent} max="100" />}
                   {documentState.error && <p className="error-copy">{documentState.error}</p>}
                   {textWarning && <p className="warning-copy">{textWarning}</p>}
-                  {engine === 'local' && (
+                  {naturalReady ? (
                     <AudioReadyBar
                       progress={audioReady}
-                      canPrepare={!!documentState.pagesWithReadableText && documentState.extraction === 'complete' && (localStatus === 'ready' || localStatus === 'playing' || localStatus === 'paused' || localStatus === 'buffering')}
+                      canPrepare={!!documentState.pagesWithReadableText && documentState.extraction === 'complete'}
                       onPrepare={() => {
                         if (!documentState || !localRef.current?.available) return
                         void localRef.current.prepareDocument({
@@ -868,6 +874,14 @@ function App() {
                         })
                       }}
                       onCancel={() => localRef.current?.cancelPrepare()}
+                    />
+                  ) : (
+                    <AudioReadyBar
+                      progress={null}
+                      needsVoice
+                      voiceActionLabel={engine === 'local' ? (voiceCached ? 'Turn on voice' : 'Download voice') : 'Use Natural voice'}
+                      voiceActionDisabled={localStatus === 'preparing'}
+                      onVoiceAction={useNaturalVoice}
                     />
                   )}
                   <p className="panel-copy">Saved here, not uploaded.</p>
@@ -987,7 +1001,7 @@ function App() {
                   <button className="play-button" aria-label={playLabel} onClick={() => read()} disabled={!documentState.pagesWithReadableText || !speechRef.current.available}><Icon name={playback.status === 'playing' ? 'pause' : 'play'} /></button>
                 </div>
                 {progressControl}
-                {engine === 'local' && audioReady && <AudioReadyBar progress={audioReady} compact />}
+                {engine === 'local' && <AudioReadyBar progress={audioReady} compact needsVoice={!naturalReady} />}
                 <div className="playback-readout"><strong>{readingStatus}</strong><span>{playback.message}</span></div>
                 {rotaryControls}
               </footer>
@@ -996,7 +1010,7 @@ function App() {
             {isMobile && (
               <nav className="mobile-bar" ref={mobileBarRef} aria-label="Reader panels and playback">
 
-                {engine === 'local' && audioReady && <AudioReadyBar progress={audioReady} compact />}
+                {engine === 'local' && <AudioReadyBar progress={audioReady} compact needsVoice={!naturalReady} />}
                 {progressControl}
                 <div className="mobile-tabs" role="tablist" aria-label="Reader panels">
                   {MOBILE_PANELS.map((panel) => (

@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LocalNarratorEngine } from './LocalNarratorEngine'
 import { planSpeechChunks } from '../domain/speechPlan'
 import { AudioCache } from './audioCache'
+import { cacheId, encodedKey } from './encodedChunk'
+import { localParts } from './localPlan'
+import type { LoadableProducer, ProducedAudio } from './chunkProducer'
 
 vi.mock('../diagnostics/diagnostics', () => ({ recordEvent: vi.fn() }))
 
@@ -212,6 +215,169 @@ describe('private PCM lifecycle (control mocks, not audible evidence)', () => {
     }
     audio.dispatchEvent(new Event('ended')); await tick()
     expect(r.onError).not.toHaveBeenCalled()
+    engine.dispose()
+  })
+})
+
+class ScriptedProducer implements LoadableProducer {
+  readonly id = 'test-voice'
+  readonly label = 'Test'
+  downloadedFiles = 0
+  prepared = true
+  texts: string[] = []
+  failOn: ((text: string) => string | null) | null = null
+  async prepare() { return 'ready' as const }
+  dispose() {}
+  async generate(text: string): Promise<ProducedAudio> {
+    this.texts.push(text)
+    const fail = this.failOn?.(text)
+    if (fail) throw new Error(fail)
+    return { pcm: new Float32Array(24000), sampleRate: 24000 }
+  }
+}
+
+const flush = async (times = 24) => {
+  for (let i = 0; i < times; i++) {
+    await tick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
+}
+
+describe('prepared audio identity, bounds and progress', () => {
+  const page = (letter: string) => Array.from({ length: 12 }, () => `${letter.repeat(18)}. `).join('')
+
+  it('does not play an earlier passage when starting from a later page after prepare', async () => {
+    const producer = new ScriptedProducer()
+    const cache = new AudioCache()
+    const audio = new FakeAudio()
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache, createAudio: () => audio as unknown as HTMLAudioElement,
+      lookaheadSeconds: 8, maxBufferedSeconds: 8, packTargetSeconds: 1,
+    })
+    const pages = [page('A'), page('B')]
+    await engine.prepareDocument({ chunks: planSpeechChunks(pages, 1, 'document'), rate: 1, documentId: 'doc-pages' })
+    await flush()
+    const first = localParts(planSpeechChunks(pages, 1, 'document'))[0]!
+    const later = localParts(planSpeechChunks(pages, 2, 'document'))[0]!
+    expect(encodedKey(first)).toBe(encodedKey(later))
+    expect(cacheId('doc-pages', producer.id, 1, first)).not.toBe(cacheId('doc-pages', producer.id, 1, later))
+    expect((await cache.get(cacheId('doc-pages', producer.id, 1, first), false))?.part.text).toMatch(/A{8,}/)
+    const onPage = vi.fn()
+    const generated = producer.texts.length
+    engine.speak({
+      text: '', rate: 1, documentId: 'doc-pages', chunks: planSpeechChunks(pages, 2, 'document'),
+      onPosition: vi.fn(), onPage, onError: vi.fn(),
+    })
+    await flush()
+    expect(producer.texts.slice(generated).join('')).toMatch(/B{8,}/)
+    expect(producer.texts.slice(generated).join('')).not.toMatch(/A{8,}/)
+    expect(onPage).toHaveBeenCalledWith(2)
+    expect(onPage).not.toHaveBeenCalledWith(1)
+    engine.dispose()
+  })
+
+  it('keeps only a bounded playback window in memory while preparing the rest', async () => {
+    const producer = new ScriptedProducer()
+    const cache = new AudioCache()
+    const audio = new FakeAudio()
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache, createAudio: () => audio as unknown as HTMLAudioElement,
+      lookaheadSeconds: 2.5, maxBufferedSeconds: 4, packTargetSeconds: 1,
+    })
+    const pages = Array.from({ length: 12 }, (_, index) => `Sentence ${index} keeps the reader moving along.`)
+    const chunks = planSpeechChunks(pages, 1, 'document')
+    engine.speak({ text: '', rate: 1, documentId: 'doc-long', chunks, onPosition: vi.fn(), onPage: vi.fn(), onError: vi.fn() })
+    const preparing = engine.prepareDocument({ chunks, rate: 1, documentId: 'doc-long' })
+    await flush(40)
+    await preparing
+    expect(engine.stats.maxBufferedSeconds).toBeLessThanOrEqual(5)
+    expect(producer.texts.length).toBeGreaterThan(6)
+    expect(cache.retained).toBeLessThan(producer.texts.length)
+    engine.dispose()
+  })
+
+  it('reports ready-through as the last upcoming page, not only the current clip', async () => {
+    const producer = new ScriptedProducer()
+    const audio = new FakeAudio()
+    const onAudioProgress = vi.fn()
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache: new AudioCache(), createAudio: () => audio as unknown as HTMLAudioElement,
+      lookaheadSeconds: 25, maxBufferedSeconds: 30, packTargetSeconds: 0.5,
+    })
+    engine.speak({
+      text: '', rate: 1, documentId: 'doc-ready',
+      chunks: planSpeechChunks([
+        Array.from({ length: 20 }, (_, index) => `One sentence ${index} on the opening page. `).join(''),
+        Array.from({ length: 20 }, (_, index) => `Two sentence ${index} on the later page. `).join(''),
+      ], 1, 'document'),
+      onPosition: vi.fn(), onPage: vi.fn(), onError: vi.fn(), onAudioProgress,
+    })
+    await flush(40)
+    const pages = onAudioProgress.mock.calls.map(call => call[0].lastReadyPage)
+    expect(pages.at(-1)).toBe(2)
+    expect(pages[0]).toBe(1)
+    engine.dispose()
+  })
+
+  it('does not speak or highlight a failed prepare-only passage', async () => {
+    const producer = new ScriptedProducer()
+    producer.failOn = text => /^x+$/.test(text.trim()) ? 'TOKEN_LIMIT' : null
+    const audio = new FakeAudio()
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache: new AudioCache(), createAudio: () => audio as unknown as HTMLAudioElement,
+      lookaheadSeconds: 8, maxBufferedSeconds: 8, packTargetSeconds: 1,
+    })
+    const onPage = vi.fn()
+    const onPosition = vi.fn()
+    engine.speak({
+      text: '', rate: 1, documentId: 'doc-skip',
+      chunks: planSpeechChunks(['Hello there friend.'], 1, 'page'),
+      onPosition, onPage, onError: vi.fn(),
+    })
+    await engine.prepareDocument({
+      chunks: planSpeechChunks(['Hello there friend.', `${'x'.repeat(200)}.`], 1, 'document'),
+      rate: 1, documentId: 'doc-skip',
+    })
+    await flush()
+    expect(onPage).not.toHaveBeenCalledWith(2)
+    expect(onPosition.mock.calls.some(call => String(call[0]) === '1')).toBe(false)
+    engine.dispose()
+  })
+
+  it('clears lock-screen controls when reading finishes', async () => {
+    const handlers = new Map<string, MediaSessionActionHandler | null>()
+    const session = {
+      metadata: null as MediaMetadata | null,
+      playbackState: 'none',
+      setActionHandler: (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => { handlers.set(action, handler) },
+      setPositionState: vi.fn(),
+    }
+    Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: session })
+    vi.stubGlobal('MediaMetadata', class {
+      title = ''
+      artist = ''
+      constructor(init: MediaMetadataInit) { this.title = init.title ?? ''; this.artist = init.artist ?? '' }
+    })
+    const producer = new ScriptedProducer()
+    const audio = new FakeAudio()
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache: new AudioCache(), createAudio: () => audio as unknown as HTMLAudioElement,
+      lookaheadSeconds: 8, maxBufferedSeconds: 8, packTargetSeconds: 1,
+    })
+    const end = vi.fn()
+    engine.onEnd(end)
+    engine.speak({
+      text: '', rate: 1, documentId: 'doc-end',
+      chunks: planSpeechChunks(['Only one sentence.'], 1, 'document'),
+      onPosition: vi.fn(), onPage: vi.fn(), onError: vi.fn(), title: 'A PDF',
+    })
+    await flush()
+    expect(handlers.get('play')).toEqual(expect.any(Function))
+    audio.dispatchEvent(new Event('ended'))
+    await flush()
+    expect(end).toHaveBeenCalled()
+    expect(session.playbackState).toBe('none')
+    expect(handlers.get('play')).toBeNull()
     engine.dispose()
   })
 })

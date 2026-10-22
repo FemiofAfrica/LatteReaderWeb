@@ -6,12 +6,14 @@ import type { LocalPart } from './localPlan'
 class FakeAudio extends EventTarget {
   currentTime = 0
   paused = true
+  autoReady = true
   private _src = ''
   get src() { return this._src }
   set src(value: string) {
     this._src = value
-    queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
+    if (this.autoReady) queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
   }
+  completeLoad() { this.dispatchEvent(new Event('loadedmetadata')) }
   play() { this.paused = false; return Promise.resolve() }
   pause() { this.paused = true }
   load() {}
@@ -61,5 +63,19 @@ describe('HTML audio queue', () => {
     expect(audio.paused).toBe(false)
     expect(audio.src).toBe('blob:one')
     expect(audio.currentTime).toBe(1.2)
+  })
+
+  it('does not start a clip that finished loading after pause', async () => {
+    const audio = new FakeAudio()
+    audio.autoReady = false
+    const queue = new HtmlAudioQueue(audio as unknown as HTMLAudioElement, { onSlice: vi.fn(), onIdle: vi.fn(), onError: vi.fn() })
+    queue.enqueue(segment('blob:one', 1, 4))
+    const playing = queue.play()
+    queue.pause()
+    audio.completeLoad()
+    await playing
+    await Promise.resolve(); await Promise.resolve()
+    expect(queue.isPaused).toBe(true)
+    expect(audio.paused).toBe(true)
   })
 })

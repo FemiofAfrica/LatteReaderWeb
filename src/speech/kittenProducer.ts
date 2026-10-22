@@ -41,8 +41,8 @@ export class KittenProducer implements LoadableProducer {
     worker.onerror = () => {
       if (worker !== this.worker) return
       window.dispatchEvent(new CustomEvent('latte-local-failed', { detail: { code: 'WORKER_FAILED' } }))
-      this.disposeWorker()
       this.failed?.()
+      this.disposeWorker('WORKER_FAILED')
     }
     try {
       const init = await this.rpc('init', { allowNetwork })
@@ -52,16 +52,17 @@ export class KittenProducer implements LoadableProducer {
       window.dispatchEvent(new CustomEvent('latte-local-ready', { detail: init }))
       return 'ready'
     } catch (error) {
-      if (worker === this.worker && String((error as Error)?.message) === 'NOT_CACHED') {
+      const message = String((error as Error)?.message ?? error)
+      if (message === 'CANCELLED') return 'cancelled'
+      if (message === 'NOT_CACHED') {
         this.disposeWorker()
         return 'not-cached'
       }
       if (worker === this.worker) {
-        window.dispatchEvent(new CustomEvent('latte-local-failed', { detail: { code: String((error as Error)?.message ?? error) } }))
+        window.dispatchEvent(new CustomEvent('latte-local-failed', { detail: { code: message } }))
         this.disposeWorker()
-        return 'error'
       }
-      return 'cancelled'
+      return 'error'
     }
   }
 
@@ -74,11 +75,11 @@ export class KittenProducer implements LoadableProducer {
 
   dispose(): void { this.disposeWorker() }
 
-  private disposeWorker(): void {
+  private disposeWorker(reason = 'CANCELLED'): void {
     this.ready = false
     this.worker?.terminate()
     this.worker = null
-    for (const pending of this.pending.values()) pending.reject(new Error('CANCELLED'))
+    for (const pending of this.pending.values()) pending.reject(new Error(reason))
     this.pending.clear()
   }
 }
