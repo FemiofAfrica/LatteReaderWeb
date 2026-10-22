@@ -33,3 +33,10 @@ export const RETAIN_BEHIND_SECONDS = 20
 export const PACK_TARGET_SECONDS = 45
 /** Start the next file before the current one ends, when more audio is already packed. */
 export const UNDERRUN_GUARD_SECONDS = 1.5
+/**
+ * Chrome Android only takes audio focus and shows a media notification for files
+ * at least five seconds long. Without that notification the tab is not treated
+ * as playing media and is frozen when the user switches apps.
+ * @see https://developer.chrome.com/blog/media-notifications
+ */
+export const MEDIA_NOTIFICATION_SECONDS = 5

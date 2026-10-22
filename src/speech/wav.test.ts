@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { concatWav, encodeWav, WAV_HEADER_BYTES, wavDuration } from './wav'
+import { concatWav, encodeWav, padWav, WAV_HEADER_BYTES, wavDataBytes, wavDuration } from './wav'
 
 const readString = (view: DataView, offset: number, length: number) =>
   String.fromCharCode(...new Uint8Array(view.buffer, offset, length))
@@ -16,6 +16,13 @@ describe('WAV encoding', () => {
     expect(view.getUint16(34, true)).toBe(16)
     expect(wav.byteLength).toBe(WAV_HEADER_BYTES + pcm.length * 2)
     expect(wavDuration(pcm.length, 24000)).toBeCloseTo(4 / 24000)
+  })
+
+  it('pads a short file so Chrome Android will show a media notification', () => {
+    const short = encodeWav(new Float32Array(24000), 24000)
+    const padded = padWav(short, 5)
+    expect(wavDataBytes(padded)).toBe(5 * 24000 * 2)
+    expect(padWav(padded, 5).byteLength).toBe(padded.byteLength)
   })
 
   it('joins files so a locked screen can play a longer current track', () => {

@@ -32,6 +32,24 @@ export function encodeWav(pcm: Float32Array, sampleRate: number): ArrayBuffer {
   return buffer
 }
 
+export function wavSampleRate(wav: ArrayBuffer): number {
+  return wav.byteLength >= WAV_HEADER_BYTES ? new DataView(wav).getUint32(24, true) : 0
+}
+
+export function wavDataBytes(wav: ArrayBuffer): number {
+  return wav.byteLength >= WAV_HEADER_BYTES ? new DataView(wav).getUint32(40, true) : 0
+}
+
+/** Trailing silence so Chrome Android sees a file long enough for a media notification. */
+export function padWav(wav: ArrayBuffer, minSeconds: number): ArrayBuffer {
+  const sampleRate = wavSampleRate(wav) || 24000
+  const need = Math.ceil(Math.max(0, minSeconds) * sampleRate) * WAV_BYTES_PER_SAMPLE
+  const have = wavDataBytes(wav)
+  if (have >= need) return wav
+  const frames = (need - have) / WAV_BYTES_PER_SAMPLE
+  return concatWav([wav, encodeWav(new Float32Array(frames), sampleRate)])
+}
+
 /** Join same-format mono WAVs into one file for a longer HTMLAudioElement source. */
 export function concatWav(parts: readonly ArrayBuffer[]): ArrayBuffer {
   const usable = parts.filter(part => part.byteLength > WAV_HEADER_BYTES)

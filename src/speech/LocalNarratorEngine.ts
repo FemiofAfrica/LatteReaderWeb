@@ -2,13 +2,13 @@ import type { SpeechEngine, SpeechRequest } from './SpeechEngine'
 import { localParts, type LocalPart } from './localPlan'
 import { recordEvent } from '../diagnostics/diagnostics'
 import type { LoadableProducer } from './chunkProducer'
-import { DEFAULT_LOOKAHEAD_SECONDS, MAX_BUFFERED_SECONDS, PACK_TARGET_SECONDS, UNDERRUN_GUARD_SECONDS } from './chunkProducer'
+import { DEFAULT_LOOKAHEAD_SECONDS, MAX_BUFFERED_SECONDS, MEDIA_NOTIFICATION_SECONDS } from './chunkProducer'
 import { decideSynthesisJob, PREPARE_PAUSE_SECONDS, PREPARE_RESUME_SECONDS, yieldToPlayback } from './prepareSchedule'
 import { KittenProducer } from './kittenProducer'
 import { encodeWav, wavDuration } from './wav'
 import { AudioCache, sharedAudioCache } from './audioCache'
 import { cacheId, encodedKey, type EncodedChunk } from './encodedChunk'
-import { packChunks, takePack } from './audioPack'
+import { contentSeconds, packChunks, takeOne } from './audioPack'
 import { createPlaybackAudio, HtmlAudioQueue } from './htmlAudioQueue'
 import { bindMediaSession, updateMediaPosition } from './mediaSession'
 import { audioReadyProgress, emptyAudioReady, type AudioReadyProgress } from './audioReady'
@@ -64,6 +64,8 @@ export class LocalNarratorEngine implements SpeechEngine {
   private sourceChunks: SpeechChunk[] = []
   private lastPart: LocalPart | null = null
   private unpacked: EncodedChunk[] = []
+  private currentEncoded: EncodedChunk[] = []
+  private backgroundEncoded: EncodedChunk[] = []
   private catalog: { id: string; duration: number; pageEnd: number; speed: number }[] = []
   private attemptedIds = new Set<string>()
   private totalParts = 0
@@ -83,7 +85,6 @@ export class LocalNarratorEngine implements SpeechEngine {
   private runNotice = { parts: 0, dropped: 0 }
   private lookaheadSeconds: number
   private maxBufferedSeconds: number
-  private packTargetSeconds: number
   private preparePauseSeconds: number
   private prepareResumeSeconds: number
   private yieldPrepare: () => Promise<void>
@@ -93,7 +94,6 @@ export class LocalNarratorEngine implements SpeechEngine {
     this.cache = options.cache ?? sharedAudioCache
     this.lookaheadSeconds = options.lookaheadSeconds ?? DEFAULT_LOOKAHEAD_SECONDS
     this.maxBufferedSeconds = options.maxBufferedSeconds ?? MAX_BUFFERED_SECONDS
-    this.packTargetSeconds = options.packTargetSeconds ?? PACK_TARGET_SECONDS
     this.preparePauseSeconds = options.preparePauseSeconds ?? PREPARE_PAUSE_SECONDS
     this.prepareResumeSeconds = options.prepareResumeSeconds ?? PREPARE_RESUME_SECONDS
     this.yieldPrepare = options.yieldPrepare ?? yieldToPlayback
@@ -102,7 +102,9 @@ export class LocalNarratorEngine implements SpeechEngine {
       onSegmentEnd: segment => {
         const last = segment.slices.at(-1)
         if (last) this.leaveSlice(last.part)
-        this.completedSeconds += segment.duration
+        this.completedSeconds += segment.contentDuration
+        this.currentEncoded = this.backgroundEncoded
+        this.backgroundEncoded = []
         this.lastSliceKey = ''
         this.packIfNeeded()
         void this.pump(this.run)
@@ -110,7 +112,7 @@ export class LocalNarratorEngine implements SpeechEngine {
       onIdle: () => this.drainIdle(),
       onError: () => this.fail(),
       onTime: (position, slice) => {
-        this.listenedSeconds = this.completedSeconds + position
+        this.listenedSeconds = this.completedSeconds + Math.min(position, this.queue.currentSegment?.contentDuration ?? position)
         if (slice) this.enterSlice(slice.part)
         this.emitProgress()
         updateMediaPosition({
@@ -156,6 +158,8 @@ export class LocalNarratorEngine implements SpeechEngine {
     this.playParts = localParts(this.sourceChunks)
     this.totalParts = Math.max(this.totalParts, this.playParts.length)
     this.unpacked = []
+    this.currentEncoded = []
+    this.backgroundEncoded = []
     this.completedSeconds = 0
     this.listenedSeconds = 0
     this.lastSliceKey = ''
@@ -173,11 +177,9 @@ export class LocalNarratorEngine implements SpeechEngine {
       onSeek: time => this.queue.seekInCurrent(time),
       onSeekBy: delta => this.queue.seekBy(delta),
     })
-    void this.queue.unlock().then(() => {
-      if (run !== this.run) return
-      this.state('buffering')
-      void this.pump(run)
-    }).catch(() => { if (run === this.run) this.fail() })
+    this.state('buffering')
+    void this.queue.unlock().catch(() => { /* real src play() retries after the first clip */ })
+    void this.pump(run)
   }
   async prepareDocument(request: PrepareDocumentRequest): Promise<void> {
     if (!this.producer.prepared) return
@@ -211,7 +213,10 @@ export class LocalNarratorEngine implements SpeechEngine {
   private documentId: string | undefined
   private prepareRate = 1
   private playableSeconds() {
-    return this.unpacked.reduce((total, chunk) => total + chunk.duration, 0) + this.queue.remaining
+    return contentSeconds(this.unpacked) + this.queue.remaining
+  }
+  private pageHidden() {
+    return typeof document !== 'undefined' && document.visibilityState === 'hidden'
   }
   private currentRate() { return this.request?.rate ?? this.prepareRate }
   private partId(part: LocalPart, rate = this.currentRate()) {
@@ -301,10 +306,14 @@ export class LocalNarratorEngine implements SpeechEngine {
       resumeSeconds: this.prepareResumeSeconds,
     }).job !== null
   }
-  private nextPart(): { part: LocalPart; playback: boolean } | undefined {
+  private nextPart(run: number): { part: LocalPart; playback: boolean } | undefined {
     const job = this.schedule()
     if (job === 'playback' && this.playParts.length) {
-      return { part: this.playParts.shift()!, playback: !!this.request }
+      if (run !== this.run) {
+        if (!this.preparingAll) return undefined
+      } else {
+        return { part: this.playParts.shift()!, playback: !!this.request }
+      }
     }
     if (job !== 'prepare') return undefined
     const rate = this.currentRate()
@@ -327,7 +336,7 @@ export class LocalNarratorEngine implements SpeechEngine {
     this.pumping = true
     try {
       while ((run === this.run || this.preparingAll) && this.shouldGenerate()) {
-        const next = this.nextPart()
+        const next = this.nextPart(run)
         if (!next) break
         const { part, playback } = next
         if (!part.text.trim()) continue
@@ -374,8 +383,9 @@ export class LocalNarratorEngine implements SpeechEngine {
     const documentId = this.request?.documentId ?? this.documentId
     const id = documentId ? this.partId(part, rate) : ''
     if (id) this.attemptedIds.add(id)
+    const lead = playback && this.queue.isEmpty && !this.unpacked.length && !this.currentEncoded.length
     if (id) {
-      const cached = this.cache.peek(id) ?? await this.cache.get(id, playback)
+      const cached = this.cache.peek(id) ?? ((this.catalogHas(part, rate) || !lead) ? await this.cache.get(id, playback) : undefined)
       if (cached) {
         this.consecutiveSkips = 0
         if (!playback) this.cache.release(id)
@@ -412,24 +422,30 @@ export class LocalNarratorEngine implements SpeechEngine {
     if (this.catalog.some(item => item.id === id)) return
     this.catalog.push({ id, duration: chunk.duration, pageEnd: chunk.part.pageEnd, speed: rate })
   }
-  private enqueuePacked(chunks: EncodedChunk[]) {
+  private enqueuePacked(chunks: EncodedChunk[], minDuration = 0) {
     if (!chunks.length) return
-    this.queue.enqueue(packChunks(chunks))
+    this.queue.enqueue(packChunks(chunks, minDuration))
     for (const chunk of chunks) this.cache.release(this.partId(chunk.part))
   }
   private packIfNeeded() {
     if (!this.request) return
     if (this.queue.isEmpty && this.unpacked.length) {
-      this.enqueuePacked(takePack(this.unpacked, this.packTargetSeconds))
+      this.currentEncoded = takeOne(this.unpacked)
+      this.enqueuePacked(this.currentEncoded, MEDIA_NOTIFICATION_SECONDS)
+      this.packBackground()
       return
     }
-    if (this.queue.hasNext || !this.unpacked.length) return
-    const unpacked = this.unpacked.reduce((total, chunk) => total + chunk.duration, 0)
-    const done = !this.playParts.length && !this.busy
-    const underrun = this.queue.remaining < UNDERRUN_GUARD_SECONDS
-    if (unpacked >= this.packTargetSeconds || unpacked >= this.lookaheadSeconds || done || underrun) {
-      this.enqueuePacked(takePack(this.unpacked, Math.max(this.packTargetSeconds, this.lookaheadSeconds)))
+    if (!this.pageHidden() && this.currentEncoded.length && contentSeconds(this.currentEncoded) < MEDIA_NOTIFICATION_SECONDS && this.unpacked.length) {
+      this.currentEncoded.push(...this.unpacked.splice(0))
+      void this.queue.replaceCurrent(packChunks(this.currentEncoded, MEDIA_NOTIFICATION_SECONDS))
     }
+    this.packBackground()
+  }
+  private packBackground() {
+    if (!this.request || !this.unpacked.length || this.queue.isEmpty) return
+    this.backgroundEncoded.push(...this.unpacked.splice(0))
+    this.queue.replaceUpcoming(packChunks(this.backgroundEncoded, MEDIA_NOTIFICATION_SECONDS))
+    for (const chunk of this.backgroundEncoded) this.cache.release(this.partId(chunk.part))
   }
   private enterSlice(part: LocalPart) {
     const key = encodedKey(part)
@@ -447,7 +463,7 @@ export class LocalNarratorEngine implements SpeechEngine {
   }
   private drainIdle() {
     if (!this.request) return
-    if (!this.playParts.length && !this.busy && !this.pumping && !this.unpacked.length) {
+    if (!this.playParts.length && !this.busy && !this.pumping && !this.unpacked.length && !this.backgroundEncoded.length) {
       const request = this.request
       this.stopPlayback()
       this.ended()
@@ -500,6 +516,8 @@ export class LocalNarratorEngine implements SpeechEngine {
     }
     this.playParts = []
     this.unpacked = []
+    this.currentEncoded = []
+    this.backgroundEncoded = []
     this.completedSeconds = 0
     this.listenedSeconds = 0
     this.lastSliceKey = ''
@@ -523,18 +541,34 @@ export class LocalNarratorEngine implements SpeechEngine {
   private bindVisibility() {
     if (this.visibilityBound) return
     this.visibilityBound = true
-    const refill = () => {
-      if (document.visibilityState === 'hidden') return
-      if (this.request && !this.paused) void this.pump(this.run)
-      else if (this.preparingAll) void this.pump(this.run)
+    const onVisible = () => {
+      if (this.request && !this.paused) {
+        this.queue.ensurePlaying()
+        void this.pump(this.run)
+      } else if (this.preparingAll) void this.pump(this.run)
     }
-    document.addEventListener('visibilitychange', refill)
-    window.addEventListener('pageshow', refill)
-    window.addEventListener('focus', refill)
+    const onChange = () => {
+      if (document.visibilityState === 'hidden') {
+        this.packBackground()
+        if (this.request && !this.paused) {
+          this.queue.ensurePlaying()
+          updateMediaPosition({
+            duration: this.queue.currentSegment?.duration ?? 0,
+            position: this.queue.position,
+            paused: false,
+          })
+        }
+        return
+      }
+      onVisible()
+    }
+    document.addEventListener('visibilitychange', onChange)
+    window.addEventListener('pageshow', onVisible)
+    window.addEventListener('focus', onVisible)
     this.unbindVisibility = () => {
-      document.removeEventListener('visibilitychange', refill)
-      window.removeEventListener('pageshow', refill)
-      window.removeEventListener('focus', refill)
+      document.removeEventListener('visibilitychange', onChange)
+      window.removeEventListener('pageshow', onVisible)
+      window.removeEventListener('focus', onVisible)
       this.visibilityBound = false
     }
   }

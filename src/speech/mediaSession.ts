@@ -14,11 +14,24 @@ function media(): MediaSession | null {
   try { return navigator.mediaSession ?? null } catch { return null }
 }
 
+function mediaArtwork(): MediaImage[] {
+  try {
+    const src = new URL('/icon-512.png', window.location.origin).href
+    return [{ src, sizes: '512x512', type: 'image/png' }]
+  } catch {
+    return []
+  }
+}
+
 export function bindMediaSession(handlers: MediaSessionHandlers): () => void {
   const session = media()
   if (!session) return () => undefined
   try {
-    session.metadata = new MediaMetadata({ title: handlers.title, artist: handlers.artist ?? 'LatteReader' })
+    session.metadata = new MediaMetadata({
+      title: handlers.title,
+      artist: handlers.artist ?? 'LatteReader',
+      artwork: mediaArtwork(),
+    })
     session.playbackState = 'playing'
     const bind = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
       try { session.setActionHandler(action, handler) } catch { /* not all browsers implement every action */ }

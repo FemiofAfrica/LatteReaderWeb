@@ -26,14 +26,22 @@ class FakeWorker {
 class FakeAudio extends EventTarget {
   currentTime = 0
   paused = true
+  loop = false
+  muted = false
+  playCalls = 0
+  pauseCalls = 0
   private _src = ''
   get src() { return this._src }
   set src(value: string) {
     this._src = value
     queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
   }
-  play() { this.paused = false; return Promise.resolve() }
-  pause() { this.paused = true }
+  play() { this.paused = false; this.playCalls += 1; return Promise.resolve() }
+  pause() {
+    this.paused = true
+    this.pauseCalls += 1
+    this.dispatchEvent(new Event('pause'))
+  }
   load() {}
   removeAttribute(name: string) { if (name === 'src') this._src = '' }
   remove() {}
@@ -416,6 +424,80 @@ describe('prepared audio identity, bounds and progress', () => {
     await flush(40)
     expect(producer.texts.length).toBeGreaterThan(0)
     expect(producer.texts.length).toBeLessThanOrEqual(5)
+    engine.dispose()
+  })
+
+  it('starts the HTMLAudioElement after the first clip, with a 5s file, without WebAudio', async () => {
+    const producer = new ScriptedProducer()
+    const audio = new FakeAudio()
+    const created = vi.fn()
+    vi.stubGlobal('AudioContext', class {
+      constructor() { created() }
+    })
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache: new AudioCache(), createAudio: () => audio as unknown as HTMLAudioElement,
+      lookaheadSeconds: 8, maxBufferedSeconds: 12, packTargetSeconds: 1,
+    })
+    engine.speak({
+      text: '', rate: 1, documentId: 'doc-first',
+      chunks: planSpeechChunks(['First sentence starts now. Second keeps going.', 'Later page.'], 1, 'document'),
+      onPosition: vi.fn(), onPage: vi.fn(), onError: vi.fn(),
+    })
+    await flush()
+    expect(audio.src).toMatch(/^blob:/)
+    expect(audio.paused).toBe(false)
+    expect(audio.muted).toBe(false)
+    expect(created).not.toHaveBeenCalled()
+    engine.dispose()
+  })
+
+  it('does not pause the element on visibilitychange, and concatenates later clips into one upcoming file', async () => {
+    const producer = new ScriptedProducer()
+    const audio = new FakeAudio()
+    const handlers = new Map<string, MediaSessionActionHandler | null>()
+    const session = {
+      metadata: null as MediaMetadata | null,
+      playbackState: 'none',
+      setActionHandler: (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => { handlers.set(action, handler) },
+      setPositionState: vi.fn(),
+    }
+    Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: session })
+    vi.stubGlobal('MediaMetadata', class {
+      title = ''
+      artist = ''
+      artwork: MediaImage[] = []
+      constructor(init: MediaMetadataInit) {
+        this.title = init.title ?? ''
+        this.artist = init.artist ?? ''
+        this.artwork = init.artwork ? [...init.artwork] : []
+      }
+    })
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache: new AudioCache(), createAudio: () => audio as unknown as HTMLAudioElement,
+      lookaheadSeconds: 20, maxBufferedSeconds: 30, packTargetSeconds: 1,
+    })
+    engine.speak({
+      text: '', rate: 1, documentId: 'doc-hide', title: 'A PDF',
+      chunks: planSpeechChunks([
+        Array.from({ length: 8 }, (_, index) => `Sentence ${index} on this page. `).join(''),
+      ], 1, 'document'),
+      onPosition: vi.fn(), onPage: vi.fn(), onError: vi.fn(),
+    })
+    await flush(40)
+    expect(session.playbackState).toBe('playing')
+    expect(handlers.get('play')).toEqual(expect.any(Function))
+    expect(audio.src).toMatch(/^blob:/)
+    const pauses = audio.pauseCalls
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    expect(audio.pauseCalls).toBe(pauses)
+    expect(audio.paused).toBe(false)
+    expect(session.playbackState).toBe('playing')
+    audio.pause()
+    await flush()
+    expect(audio.paused).toBe(false)
     engine.dispose()
   })
 })

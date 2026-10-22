@@ -155,7 +155,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .audio-ready.compact { margin: 0; flex: 1 0 100%; }
 .audio-ready.compact .audio-ready-track { height: 6px; }
 .audio-ready.compact .audio-ready-copy { margin-top: 4px; font-size: 10px; }
-.playback-audio { position: absolute; width: 1px; height: 1px; opacity: 0.01; pointer-events: none; }
+.playback-audio { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0.01; pointer-events: none; }
 .file-facts { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; color: var(--muted); font: 500 9px DM Mono, monospace; }
 
 .segmented-control { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin: 0; padding: 3px; border: 0; border-radius: 8px; background: rgba(0,0,0,.45); }
