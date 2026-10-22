@@ -12,9 +12,7 @@ export interface PackedSegment {
   /** Monotonic id so a stale `ended` cannot finish the same pack twice. */
   id: number
   url: string
-  /** File duration, including trailing silence used for a media notification. */
   duration: number
-  /** Spoken duration only. Lookahead and handoff use this, not padded silence. */
   contentDuration: number
   slices: PackedSlice[]
 }

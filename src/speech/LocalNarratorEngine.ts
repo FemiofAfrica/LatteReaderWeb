@@ -8,7 +8,7 @@ import { KittenProducer } from './kittenProducer'
 import { encodeWav, wavDuration } from './wav'
 import { AudioCache, sharedAudioCache } from './audioCache'
 import { cacheId, encodedKey, type EncodedChunk } from './encodedChunk'
-import { contentSeconds, packChunks, takeOne } from './audioPack'
+import { contentSeconds, packChunks, takePack } from './audioPack'
 import { createPlaybackAudio, HtmlAudioQueue } from './htmlAudioQueue'
 import { bindMediaSession, updateMediaPosition } from './mediaSession'
 import { audioReadyProgress, emptyAudioReady, type AudioReadyProgress } from './audioReady'
@@ -45,8 +45,8 @@ export interface PrepareDocumentRequest {
 
 /**
  * On-device speech with a pluggable PCM producer and HTMLAudioElement playback.
- * Kitten is the only producer today. Audio is encoded to WAV ahead of the playhead
- * so a hidden or locked tab can keep speaking from already-ready files.
+ * Kitten is the only producer today. Ready parts are packed into non-overlapping
+ * WAV files; the next file starts only after the current element fires `ended`.
  */
 export class LocalNarratorEngine implements SpeechEngine {
   readonly id = 'kitten-micro-jasper'
@@ -419,16 +419,24 @@ export class LocalNarratorEngine implements SpeechEngine {
     if (this.catalog.some(item => item.id === id)) return
     this.catalog.push({ id, duration: chunk.duration, pageEnd: chunk.part.pageEnd, speed: rate })
   }
-  private enqueuePacked(chunks: EncodedChunk[], minDuration = 0) {
+  private enqueuePacked(chunks: EncodedChunk[]) {
     if (!chunks.length) return
-    this.queue.enqueue(packChunks(chunks, minDuration))
+    this.queue.enqueue(packChunks(chunks))
     for (const chunk of chunks) this.cache.release(this.partId(chunk.part))
+  }
+  private canStartPlayback() {
+    const ready = contentSeconds(this.unpacked)
+    if (ready <= 0) return false
+    if (ready >= MEDIA_NOTIFICATION_SECONDS) return true
+    if (ready >= this.lookaheadSeconds) return true
+    return !this.playParts.length && !this.busy
   }
   private packIfNeeded() {
     if (!this.request) return
-    if (this.queue.isEmpty && this.unpacked.length) {
-      this.currentEncoded = takeOne(this.unpacked)
-      this.enqueuePacked(this.currentEncoded, MEDIA_NOTIFICATION_SECONDS)
+    if (this.queue.isEmpty) {
+      if (!this.canStartPlayback()) return
+      this.currentEncoded = takePack(this.unpacked, MEDIA_NOTIFICATION_SECONDS)
+      this.enqueuePacked(this.currentEncoded)
       this.packBackground()
       return
     }
@@ -437,7 +445,7 @@ export class LocalNarratorEngine implements SpeechEngine {
   private packBackground() {
     if (!this.request || !this.unpacked.length || this.queue.isEmpty) return
     this.backgroundEncoded.push(...this.unpacked.splice(0))
-    this.queue.replaceUpcoming(packChunks(this.backgroundEncoded, MEDIA_NOTIFICATION_SECONDS))
+    this.queue.replaceUpcoming(packChunks(this.backgroundEncoded))
     for (const chunk of this.backgroundEncoded) this.cache.release(this.partId(chunk.part))
   }
   private enterSlice(part: LocalPart) {

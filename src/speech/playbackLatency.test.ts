@@ -14,10 +14,10 @@ describe('time-to-first-audio vs the just-in-time engine', () => {
     const pcm = new Float32Array(24000)
     const wavStarted = performance.now()
     const wav = encodeWav(pcm, 24000)
-    const packed = packChunks([{ part: part('First sentence.'), wav, duration: 1, sampleRate: 24000 }], 5)
+    const packed = packChunks([{ part: part('First sentence.'), wav, duration: 1, sampleRate: 24000 }])
     const htmlPathMs = performance.now() - wavStarted
     expect(packed.contentDuration).toBe(1)
-    expect(packed.duration).toBe(5)
+    expect(packed.duration).toBe(1)
     expect(htmlPathMs).toBeLessThan(100)
   })
 })

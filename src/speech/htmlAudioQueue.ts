@@ -1,6 +1,4 @@
 import type { PackedSegment, PackedSlice } from './audioPack'
-import { encodeWav } from './wav'
-import { MEDIA_NOTIFICATION_SECONDS } from './chunkProducer'
 
 export interface HtmlAudioHooks {
   onSlice: (slice: PackedSlice) => void
@@ -8,17 +6,6 @@ export interface HtmlAudioHooks {
   onIdle: () => void
   onError: () => void
   onTime?: (position: number, slice: PackedSlice | null) => void
-}
-
-let silenceWav: ArrayBuffer | null = null
-
-function silenceUrl(): string {
-  try {
-    silenceWav ??= encodeWav(new Float32Array(24000 * MEDIA_NOTIFICATION_SECONDS), 24000)
-    return URL.createObjectURL(new Blob([silenceWav], { type: 'audio/wav' }))
-  } catch {
-    return ''
-  }
 }
 
 export function createPlaybackAudio(): HTMLAudioElement {
@@ -29,6 +16,7 @@ export function createPlaybackAudio(): HTMLAudioElement {
   audio.controls = false
   audio.muted = false
   audio.defaultMuted = false
+  audio.loop = false
   audio.setAttribute('aria-hidden', 'true')
   audio.className = 'playback-audio'
   document.body.appendChild(audio)
@@ -36,14 +24,9 @@ export function createPlaybackAudio(): HTMLAudioElement {
 }
 
 /**
- * Plays packed WAV blobs through one HTMLAudioElement so Android Chrome and
- * iOS Safari can keep speech going after the tab is hidden. WebAudio is not used
- * for output: Chrome Android does not take audio focus or show a media
- * notification for WebAudio, so a hidden tab is frozen.
- *
- * Advance is idempotent: each pack has a monotonic id, stale `ended`/`pause`
- * from a src swap is ignored, and trailing notification-padding is skipped
- * once the next pack is ready.
+ * One HTMLAudioElement, one src at a time. Packs never overlap. The next file
+ * loads only after the native `ended` of the current src. No looping silence,
+ * no padding skip, no pause-handler that restarts a finished clip.
  */
 export class HtmlAudioQueue {
   private current: PackedSegment | null = null
@@ -51,20 +34,16 @@ export class HtmlAudioQueue {
   private sliceIndex = 0
   private paused = true
   private generation = 0
-  private loadSerial = 0
-  private playToken = 0
-  private lastFinishedId = 0
+  private live = false
   private loading = false
-  private advancing = false
   private activeSlice: PackedSlice | null = null
+  private finishedIds = new Set<number>()
 
   constructor(private audio: HTMLAudioElement, private hooks: HtmlAudioHooks) {
-    audio.addEventListener('ended', () => this.advance('ended', this.playToken))
-    audio.addEventListener('timeupdate', () => {
-      this.syncSlice()
-      this.skipPadIfReady()
-    })
-    audio.addEventListener('pause', () => this.recoverIfBackgroundPaused())
+    audio.loop = false
+    audio.addEventListener('ended', () => this.onEnded())
+    audio.addEventListener('timeupdate', () => this.syncSlice())
+    audio.addEventListener('pause', () => this.recoverIfInterrupted())
     audio.addEventListener('error', () => {
       if (this.current && this.audio.src === this.current.url) this.hooks.onError()
     })
@@ -91,14 +70,13 @@ export class HtmlAudioQueue {
     else this.upcoming.push(segment)
   }
 
-  /** Rebuild the not-yet-playing file so a hidden tab does not need JS between sentences. */
   replaceUpcoming(segment: PackedSegment): void {
     for (const old of this.upcoming) this.revoke(old)
     this.upcoming = [segment]
   }
 
   seekInCurrent(time: number): void {
-    if (!this.current) return
+    if (!this.current || !this.live) return
     this.audio.currentTime = Math.max(0, Math.min(this.current.duration - 0.05, time))
     this.syncSlice(true)
   }
@@ -108,36 +86,28 @@ export class HtmlAudioQueue {
   }
 
   async unlock(): Promise<void> {
-    if (this.current) {
-      this.paused = false
-      try { await this.audio.play() } catch { /* real src retries */ }
-      return
-    }
-    const silence = silenceUrl()
-    if (!silence) return
-    const serial = this.loadSerial
-    this.audio.loop = true
-    if (this.audio.src !== silence) this.audio.src = silence
-    try { await this.audio.play() } catch { /* first real src retries play */ }
-    if (serial !== this.loadSerial || this.current) this.audio.loop = false
+    this.paused = false
+    this.audio.loop = false
+    try { await this.audio.play() } catch { /* real src play() follows from the same element */ }
   }
 
   async play(): Promise<void> {
     this.paused = false
-    if (this.advancing) return
+    this.audio.loop = false
+    if (this.loading) return
     if (!this.current && this.upcoming.length) this.current = this.upcoming.shift() ?? null
     if (!this.current) return
-    if (this.audio.src !== this.current.url || this.audio.loop) await this.load(this.current, 0)
-    else if (this.loading) return
-    if (this.paused || !this.current || this.loading) return
-    await this.audio.play()
+    if (this.audio.src !== this.current.url) await this.load(this.current)
+    else if (this.live && this.audio.paused) await this.audio.play()
   }
 
-  /** Keep the same element playing after a hide. Never pauses or rewinds. */
   ensurePlaying(): void {
-    if (this.paused || this.loading || this.advancing || !this.current) return
+    if (this.paused || this.loading || !this.current || !this.live) return
     if (this.audio.src !== this.current.url) return
-    if (this.audio.paused) void this.audio.play().catch(() => { /* gesture already used */ })
+    if (this.audio.ended) return
+    const time = this.audio.currentTime || 0
+    if (time < 0.05) return
+    if (this.audio.paused) void this.audio.play().catch(() => { /* already ended or gesture */ })
   }
 
   pause(): void {
@@ -147,17 +117,15 @@ export class HtmlAudioQueue {
 
   async resume(): Promise<void> {
     this.paused = false
-    if (!this.current) return
+    if (!this.current || this.audio.ended) return
     await this.audio.play()
   }
 
   stop(): void {
     this.generation += 1
-    this.loadSerial += 1
-    this.playToken += 1
     this.paused = true
+    this.live = false
     this.loading = false
-    this.advancing = false
     this.audio.loop = false
     this.audio.pause()
     this.revoke(this.current)
@@ -168,7 +136,7 @@ export class HtmlAudioQueue {
     this.upcoming = []
     this.sliceIndex = 0
     this.activeSlice = null
-    this.lastFinishedId = 0
+    this.finishedIds.clear()
   }
 
   dispose(): void {
@@ -176,62 +144,51 @@ export class HtmlAudioQueue {
     this.audio.remove()
   }
 
-  private recoverIfBackgroundPaused(): void {
-    if (this.paused || this.loading || this.advancing || !this.current) return
-    if (this.audio.src !== this.current.url) return
-    void this.audio.play().catch(() => { /* stay on the element; Media Session play retries */ })
-  }
-
-  private skipPadIfReady(): void {
-    if (this.paused || this.loading || this.advancing || !this.current || !this.upcoming.length) return
-    if (this.current.contentDuration >= this.current.duration - 0.01) return
-    if ((this.audio.currentTime || 0) + 0.05 >= this.current.contentDuration) this.advance('pad', this.playToken)
-  }
-
-  private atNaturalEnd(segment: PackedSegment): boolean {
+  private recoverIfInterrupted(): void {
+    if (this.paused || this.loading || !this.live || !this.current) return
+    if (this.audio.src !== this.current.url || this.audio.ended) return
     const time = this.audio.currentTime || 0
-    return time + 0.25 >= segment.duration || time + 0.05 >= segment.contentDuration
+    if (time < 0.05 || time + 0.25 >= this.current.duration) return
+    void this.audio.play().catch(() => { /* ended or gesture */ })
   }
 
-  private advance(reason: 'ended' | 'pad', token: number): void {
-    if (this.paused || this.loading || this.advancing) return
-    if (token !== this.playToken) return
-    const finished = this.current
-    if (!finished || finished.id === this.lastFinishedId) return
-    if (reason === 'ended' && this.audio.src && this.audio.src !== finished.url) return
-    if (reason === 'ended' && !this.atNaturalEnd(finished)) return
-    if (reason === 'pad' && !this.upcoming.length) return
+  private onEnded(): void {
+    if (this.paused || this.loading || !this.live) return
+    if (!this.current) return
+    if (this.audio.src && this.audio.src !== this.current.url) return
+    const time = this.audio.currentTime || 0
+    const spoken = this.current.contentDuration
+    if (time > 0.15 && time + 0.25 < spoken) return
+    this.advance()
+  }
 
-    this.advancing = true
-    this.lastFinishedId = finished.id
+  private advance(): void {
+    const finished = this.current
+    if (!finished || this.finishedIds.has(finished.id)) return
+    this.finishedIds.add(finished.id)
+    this.live = false
     this.hooks.onSegmentEnd?.(finished)
     this.revoke(finished)
     this.current = this.upcoming.shift() ?? null
     this.sliceIndex = 0
     this.activeSlice = null
-    this.advancing = false
     if (!this.current) {
       this.hooks.onIdle()
       return
     }
-    void this.load(this.current, 0).catch(() => this.hooks.onError())
+    void this.load(this.current).catch(() => this.hooks.onError())
   }
 
-  private async load(segment: PackedSegment, offset: number): Promise<void> {
+  private async load(segment: PackedSegment): Promise<void> {
     const generation = this.generation
-    const serial = ++this.loadSerial
-    const token = ++this.playToken
     this.loading = true
+    this.live = false
     this.audio.loop = false
     await new Promise<void>((resolve, reject) => {
       const ready = () => {
         if (this.audio.src !== segment.url) return
         this.audio.removeEventListener('loadedmetadata', ready)
         this.audio.removeEventListener('error', fail)
-        const time = offset > 0 && Number.isFinite(offset)
-          ? Math.max(0, Math.min(segment.contentDuration - 0.05, offset))
-          : 0
-        this.audio.currentTime = time
         resolve()
       }
       const fail = () => {
@@ -244,22 +201,25 @@ export class HtmlAudioQueue {
       this.audio.src = segment.url
       try { this.audio.load() } catch { /* already loading */ }
     })
-    if (generation !== this.generation || serial !== this.loadSerial || token !== this.playToken) {
-      if (serial === this.loadSerial) this.loading = false
+    if (generation !== this.generation || this.current?.id !== segment.id) {
+      this.loading = false
       return
     }
     this.loading = false
+    try { this.audio.currentTime = 0 } catch { /* jsdom */ }
     this.sliceIndex = 0
     this.syncSlice(true)
-    if (!this.paused) await this.audio.play()
+    if (this.paused) return
+    await this.audio.play()
+    if (generation !== this.generation || this.current?.id !== segment.id) return
+    this.live = true
   }
 
   private sliceAt(time: number): { slice: PackedSlice; index: number } | null {
     if (!this.current) return null
-    const spoken = Math.min(time, Math.max(0, this.current.contentDuration - 0.001))
     for (let i = this.current.slices.length - 1; i >= 0; i -= 1) {
       const slice = this.current.slices[i]!
-      if (spoken + 0.02 >= slice.start) return { slice, index: i }
+      if (time + 0.02 >= slice.start) return { slice, index: i }
     }
     return this.current.slices[0] ? { slice: this.current.slices[0], index: 0 } : null
   }

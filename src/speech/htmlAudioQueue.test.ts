@@ -8,6 +8,7 @@ class FakeAudio extends EventTarget {
   paused = true
   loop = false
   muted = false
+  ended = false
   autoReady = true
   playCalls = 0
   pauseCalls = 0
@@ -17,6 +18,7 @@ class FakeAudio extends EventTarget {
     const previous = this._src
     const wasPlaying = !this.paused && previous !== '' && previous !== value
     this._src = value
+    this.ended = false
     if (wasPlaying) {
       this.dispatchEvent(new Event('pause'))
       super.dispatchEvent(new Event('ended'))
@@ -24,17 +26,13 @@ class FakeAudio extends EventTarget {
     if (this.autoReady) queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')))
   }
   completeLoad() { this.dispatchEvent(new Event('loadedmetadata')) }
-  play() { this.paused = false; this.playCalls += 1; return Promise.resolve() }
+  play() { this.paused = false; this.ended = false; this.playCalls += 1; return Promise.resolve() }
   pause() {
     this.paused = true
     this.pauseCalls += 1
     this.dispatchEvent(new Event('pause'))
   }
   load() {}
-  dispatchEvent(event: Event): boolean {
-    if (event.type === 'ended' && this.currentTime < 0.05) this.currentTime = 99
-    return super.dispatchEvent(event)
-  }
   removeAttribute(name: string) { if (name === 'src') this._src = '' }
   remove() {}
 }
@@ -43,12 +41,12 @@ let packIds = 1
 const part = (page: number, start: number, text = `p${page}`): LocalPart => ({
   text, chunk: 0, start, end: start + text.length, page, pageEnd: page,
 })
-const segment = (url: string, page: number, duration = 1, content = duration, extras: PackedSegment['slices'] = []): PackedSegment => ({
+const segment = (url: string, page: number, duration = 1, extras: PackedSegment['slices'] = []): PackedSegment => ({
   id: packIds++,
   url,
   duration,
-  contentDuration: content,
-  slices: extras.length ? extras : [{ part: part(page, page), start: 0, duration: content }],
+  contentDuration: duration,
+  slices: extras.length ? extras : [{ part: part(page, page), start: 0, duration }],
 })
 
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() }
@@ -67,10 +65,13 @@ describe('HTML audio queue', () => {
     queue.enqueue(segment('blob:two', 2))
     await queue.play()
     expect(audio.src).toBe('blob:one')
+    expect(audio.loop).toBe(false)
     expect(slices).toEqual([1])
+    audio.currentTime = 1
     audio.dispatchEvent(new Event('ended'))
     await flush()
     expect(audio.src).toBe('blob:two')
+    audio.currentTime = 1
     audio.dispatchEvent(new Event('ended'))
     await flush()
     expect(idle).toHaveBeenCalledOnce()
@@ -90,7 +91,53 @@ describe('HTML audio queue', () => {
     expect(audio.currentTime).toBe(0)
   })
 
-  it('ignores ended from a src swap and double ended so each pack plays once', async () => {
+  it('advances on native ended even when Chrome has reset currentTime to 0', async () => {
+    const audio = new FakeAudio()
+    const ends = vi.fn()
+    const idle = vi.fn()
+    const queue = new HtmlAudioQueue(audio as unknown as HTMLAudioElement, {
+      onSlice: vi.fn(),
+      onSegmentEnd: ends,
+      onIdle: idle,
+      onError: vi.fn(),
+    })
+    queue.enqueue(segment('blob:one', 1, 5))
+    queue.enqueue(segment('blob:two', 2, 5))
+    await queue.play()
+    const plays = audio.playCalls
+    audio.currentTime = 0
+    audio.dispatchEvent(new Event('ended'))
+    audio.pause()
+    await flush()
+    expect(ends).toHaveBeenCalledTimes(1)
+    expect(audio.src).toBe('blob:two')
+    expect(audio.playCalls).toBeGreaterThan(plays)
+    expect(idle).not.toHaveBeenCalled()
+  })
+
+  it('does not replay the same src when a finished clip pauses at currentTime 0', async () => {
+    const audio = new FakeAudio()
+    const ends = vi.fn()
+    const idle = vi.fn()
+    const queue = new HtmlAudioQueue(audio as unknown as HTMLAudioElement, {
+      onSlice: vi.fn(),
+      onSegmentEnd: ends,
+      onIdle: idle,
+      onError: vi.fn(),
+    })
+    queue.enqueue(segment('blob:one', 1, 5))
+    await queue.play()
+    const plays = audio.playCalls
+    audio.currentTime = 0
+    audio.dispatchEvent(new Event('ended'))
+    audio.pause()
+    await flush()
+    expect(ends).toHaveBeenCalledTimes(1)
+    expect(idle).toHaveBeenCalledOnce()
+    expect(audio.playCalls).toBe(plays)
+  })
+
+  it('ignores a mid-clip ended and a double ended so each pack plays once', async () => {
     const audio = new FakeAudio()
     const slices: string[] = []
     const ends = vi.fn()
@@ -100,8 +147,8 @@ describe('HTML audio queue', () => {
       onIdle: vi.fn(),
       onError: vi.fn(),
     })
-    const first = segment('blob:one', 1, 5, 1, [{ part: part(1, 0, 'One.'), start: 0, duration: 1 }])
-    const second = segment('blob:two', 1, 3, 3, [
+    const first = segment('blob:one', 1, 5, [{ part: part(1, 0, 'One.'), start: 0, duration: 5 }])
+    const second = segment('blob:two', 1, 3, [
       { part: part(1, 4, 'Two.'), start: 0, duration: 1 },
       { part: part(1, 8, 'Three.'), start: 1, duration: 1 },
       { part: part(1, 14, 'Four.'), start: 2, duration: 1 },
@@ -114,11 +161,12 @@ describe('HTML audio queue', () => {
     await flush()
     expect(audio.src).toBe('blob:one')
     expect(ends).not.toHaveBeenCalled()
-    audio.currentTime = 1
-    audio.dispatchEvent(new Event('timeupdate'))
+    audio.currentTime = 0
+    audio.dispatchEvent(new Event('ended'))
     await flush()
     expect(audio.src).toBe('blob:two')
     expect(ends).toHaveBeenCalledTimes(1)
+    audio.currentTime = 3
     audio.dispatchEvent(new Event('ended'))
     audio.dispatchEvent(new Event('ended'))
     await flush()
@@ -137,7 +185,7 @@ describe('HTML audio queue', () => {
     expect(queue.upcomingSegments[0]?.url).toBe('blob:longer')
   })
 
-  it('does not pause when the page is hidden, and resumes if the element is paused without a user pause', async () => {
+  it('does not pause when the page is hidden, and resumes only a mid-clip pause', async () => {
     const audio = new FakeAudio()
     const queue = new HtmlAudioQueue(audio as unknown as HTMLAudioElement, { onSlice: vi.fn(), onIdle: vi.fn(), onError: vi.fn() })
     queue.enqueue(segment('blob:one', 1, 8))
@@ -149,12 +197,23 @@ describe('HTML audio queue', () => {
     queue.ensurePlaying()
     expect(audio.pauseCalls).toBe(pauses)
     expect(audio.paused).toBe(false)
+    audio.currentTime = 2
     const time = audio.currentTime
     audio.pause()
     await flush()
     expect(audio.paused).toBe(false)
     expect(audio.currentTime).toBe(time)
     expect(audio.playCalls).toBeGreaterThan(1)
+  })
+
+  it('never enables looping, including unlock before the first pack', async () => {
+    const audio = new FakeAudio()
+    const queue = new HtmlAudioQueue(audio as unknown as HTMLAudioElement, { onSlice: vi.fn(), onIdle: vi.fn(), onError: vi.fn() })
+    await queue.unlock()
+    expect(audio.loop).toBe(false)
+    queue.enqueue(segment('blob:one', 1, 5))
+    await queue.play()
+    expect(audio.loop).toBe(false)
   })
 
   it('pauses and resumes the same element without changing the source', async () => {

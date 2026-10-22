@@ -93,7 +93,14 @@ describe('private PCM lifecycle (control mocks, not audible evidence)', () => {
     expect(workers[0].terminated).toBe(true); expect(engine.available).toBe(false)
   })
   it('pauses at the element offset and resumes without synthesis', async () => {
-    const { engine, audio } = await ready(); engine.speak(request()); await tick(); workers[0].reply(1, pcm()); await tick()
+    const { engine, audio } = await ready(); engine.speak(request()); await tick()
+    for (let i = 1; i < workers[0].requests.length; i++) {
+      const data = workers[0].requests[i] as { answered?: boolean }
+      if (data.answered) continue
+      data.answered = true
+      workers[0].reply(i, pcm()); await tick()
+    }
+    expect(audio.src).toMatch(/^blob:/)
     audio.currentTime = .4; engine.pause(); const count = workers[0].requests.length
     engine.resume(); await tick(); expect(audio.paused).toBe(false); expect(audio.currentTime).toBe(.4)
     expect(workers[0].requests).toHaveLength(count)
@@ -437,7 +444,7 @@ describe('prepared audio identity, bounds and progress', () => {
     engine.dispose()
   })
 
-  it('starts the HTMLAudioElement after the first clip, with a 5s file, without WebAudio', async () => {
+  it('starts the HTMLAudioElement on real speech, never looping, without WebAudio', async () => {
     const producer = new ScriptedProducer()
     const audio = new FakeAudio()
     const created = vi.fn()
@@ -457,6 +464,7 @@ describe('prepared audio identity, bounds and progress', () => {
     expect(audio.src).toMatch(/^blob:/)
     expect(audio.paused).toBe(false)
     expect(audio.muted).toBe(false)
+    expect(audio.loop).toBe(false)
     expect(created).not.toHaveBeenCalled()
     engine.dispose()
   })
@@ -504,7 +512,9 @@ describe('prepared audio identity, bounds and progress', () => {
     await flush()
     expect(audio.pauseCalls).toBe(pauses)
     expect(audio.paused).toBe(false)
+    expect(audio.loop).toBe(false)
     expect(session.playbackState).toBe('playing')
+    audio.currentTime = 1
     audio.pause()
     await flush()
     expect(audio.paused).toBe(false)
@@ -526,10 +536,7 @@ describe('prepared audio identity, bounds and progress', () => {
       onPosition, onPage: vi.fn(), onError: vi.fn(),
     })
     await flush(40)
-    audio.currentTime = 1
-    audio.dispatchEvent(new Event('timeupdate'))
-    await flush()
-    for (let time = 0.05; time < 6; time += 1) {
+    for (let time = 0.05; time < 5; time += 1) {
       audio.currentTime = time
       audio.dispatchEvent(new Event('timeupdate'))
       await tick()
@@ -539,6 +546,13 @@ describe('prepared audio identity, bounds and progress', () => {
     document.dispatchEvent(new Event('visibilitychange'))
     audio.pause()
     await flush()
+    audio.currentTime = 0
+    audio.dispatchEvent(new Event('ended'))
+    await flush()
+    audio.currentTime = 0.05
+    audio.dispatchEvent(new Event('timeupdate'))
+    await tick()
+    audio.currentTime = 0
     audio.dispatchEvent(new Event('ended'))
     audio.dispatchEvent(new Event('ended'))
     await flush()
