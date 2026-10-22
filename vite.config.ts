@@ -1,10 +1,6 @@
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { privateDiagnosticsPlugin } from './scripts/privateDiagnosticsPlugin'
-
-const root = path.dirname(fileURLToPath(import.meta.url))
 
 // Diagnostics (problem-report panel, event buffer, private ingestion) exist only
 // in private tester builds (LATTE_PRIVATE_DIAGNOSTICS=1) and under the test
@@ -18,15 +14,7 @@ export default defineConfig({
   server: { host: '127.0.0.1' },
   preview: { host: '127.0.0.1' },
   // Isolated private verification must not overwrite a tester's active dist.
-  build: {
-    outDir: process.env.LATTE_BUILD_OUT || 'dist',
-    rollupOptions: {
-      input: {
-        main: path.resolve(root, 'index.html'),
-        'playback-order': path.resolve(root, 'playback-order.html'),
-      },
-    },
-  },
+  build: { outDir: process.env.LATTE_BUILD_OUT || 'dist' },
   // The narrator worker loads the pinned ONNX Runtime bundle from our own
   // origin with a dynamic import, so the worker itself has to be an ES module.
   worker: { format: 'es' },

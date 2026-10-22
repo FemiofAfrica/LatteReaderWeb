@@ -24,10 +24,12 @@ async function waitFor(url) {
 }
 
 let preview
+const harness = `${base}scripts/playback-order.html`
+
 if (!process.env.LATTE_READER_URL) {
   preview = spawn(process.execPath, [
     path.join(root, 'node_modules/vite/bin/vite.js'),
-    'preview',
+    '--config', 'vite.playback-order.config.ts',
     '--host', '127.0.0.1',
     '--port', String(port),
     '--strictPort',
@@ -35,12 +37,12 @@ if (!process.env.LATTE_READER_URL) {
 }
 
 try {
-  await waitFor(`${base}playback-order.html`)
+  await waitFor(harness)
   const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
   page.on('console', message => console.log(`[browser:${message.type()}] ${message.text()}`))
   page.on('pageerror', error => console.error(`[pageerror] ${error.message}`))
-  await page.goto(`${base}playback-order.html`, { waitUntil: 'networkidle' })
+  await page.goto(harness, { waitUntil: 'networkidle' })
   await page.click('#play')
   await page.waitForFunction(() => window.__playbackIndex?.() != null, null, { timeout: 20_000 })
   console.log(`started; playing visible for ${visibleMs}ms`)
