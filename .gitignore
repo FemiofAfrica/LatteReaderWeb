@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-playback-order/
 coverage/
 .env
 .env.*

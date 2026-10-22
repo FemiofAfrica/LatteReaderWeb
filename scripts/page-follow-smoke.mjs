@@ -65,7 +65,7 @@ async function run(mode, { startPage = 1, pauseResume = false, boundaries = true
     await p.getByRole('button', { name: /^(Download|Turn on) voice$/ }).click()
     await p.locator('[data-local-status=ready]').waitFor({ timeout: 240000 })
   }
-  if (startPage > 1) { await p.getByLabel('Go to page').first().fill(String(startPage)); await p.waitForTimeout(300) }
+  if (startPage > 1) { await p.getByLabel('Go to page').first().fill(String(startPage)); await p.getByLabel('Go to page').first().press('Enter'); await p.waitForTimeout(300) }
   const seen = [await shown()]
   let lagMs = 0, worstLag = 0, paused = false, lastPercent = 0, sliderBack = false, jumpMismatch = false
   const percent = async () => Number((await p.locator('.reading-progress-label').first().textContent()).match(/(\d+)%/)[1])

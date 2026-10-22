@@ -65,6 +65,7 @@ assert.equal(await page.evaluate(()=>window.__trial.audio.length),stops)
 await page.screenshot({path:out+'/mac-reader.png',fullPage:true})
 // Finish both real cross-page chunks in the reader; queued generation cannot move page.
 await page.getByLabel('Go to page',{exact:true}).fill('1')
+await page.getByLabel('Go to page',{exact:true}).press('Enter')
 const inputStart=await page.evaluate(()=>window.__trial.inputs.length)
 await page.getByRole('button',{name:'Start reading',exact:true}).click()
 await page.locator('[data-local-status=playing]').waitFor({timeout:120000})
@@ -74,6 +75,7 @@ assert.equal(completedInputs.join(''),'f ff fi fl ffi ffl ff fi fl ffi ffl “fi
 assert.match(await page.getByLabel('Current page',{exact:true}).innerText(),/^2/)
 // Paused explicit seek stays silent and regenerates only after Resume.
 await page.getByLabel('Go to page',{exact:true}).fill('1')
+await page.getByLabel('Go to page',{exact:true}).press('Enter')
 await page.getByRole('button',{name:'Start reading',exact:true}).click()
 await page.locator('[data-local-status=playing]').waitFor({timeout:120000})
 await page.getByRole('button',{name:'Pause reading',exact:true}).click()
