@@ -68,6 +68,8 @@ export class KittenProducer implements LoadableProducer {
 
   async generate(text: string, speed: number): Promise<ProducedAudio> {
     if (!this.worker || !this.ready) throw new Error('INVALID_REQUEST')
+    // One in-flight generate on the existing worker: the engine must not start a
+    // background prepare clip while the playhead still needs this session.
     const result = await this.rpc('generate', { text, speed })
     const pcm = new Float32Array(result.pcm as ArrayBuffer)
     return { pcm, sampleRate: 24000, metrics: result.metrics as ProducedAudio['metrics'] }

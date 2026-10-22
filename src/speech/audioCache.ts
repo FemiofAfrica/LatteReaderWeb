@@ -31,25 +31,10 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   })
 }
 
-async function openDatabase(): Promise<IDBDatabase | null> {
-  if (typeof indexedDB === 'undefined') return null
-  try {
-    const request = indexedDB.open(AUDIO_CACHE_DATABASE, AUDIO_CACHE_VERSION)
-    request.onupgradeneeded = () => {
-      const database = request.result
-      if (!database.objectStoreNames.contains(AUDIO_CACHE_STORE)) {
-        const store = database.createObjectStore(AUDIO_CACHE_STORE, { keyPath: 'id' })
-        store.createIndex('documentId', 'documentId', { unique: false })
-      }
-    }
-    return await requestResult(request)
-  } catch {
-    return null
-  }
-}
-
 export class AudioCache {
   private memory = new Map<string, CachedAudio>()
+  private databasePromise: Promise<IDBDatabase | null> | null = null
+  private writes = new Map<string, Promise<void>>()
 
   get retained(): number { return this.memory.size }
 
@@ -60,10 +45,51 @@ export class AudioCache {
 
   release(id: string): void { this.memory.delete(id) }
 
+  private open(): Promise<IDBDatabase | null> {
+    if (this.databasePromise) return this.databasePromise
+    this.databasePromise = (async () => {
+      if (typeof indexedDB === 'undefined') return null
+      try {
+        const request = indexedDB.open(AUDIO_CACHE_DATABASE, AUDIO_CACHE_VERSION)
+        request.onupgradeneeded = () => {
+          const database = request.result
+          if (!database.objectStoreNames.contains(AUDIO_CACHE_STORE)) {
+            const store = database.createObjectStore(AUDIO_CACHE_STORE, { keyPath: 'id' })
+            store.createIndex('documentId', 'documentId', { unique: false })
+          }
+        }
+        const database = await requestResult(request)
+        database.onclose = () => { this.databasePromise = null }
+        return database
+      } catch {
+        this.databasePromise = null
+        return null
+      }
+    })()
+    return this.databasePromise
+  }
+
+  private persist(record: CachedAudio): Promise<void> {
+    const write = this.writes.get(record.id)
+    const next = (write ?? Promise.resolve()).then(async () => {
+      const database = await this.open()
+      if (!database) return
+      const transaction = database.transaction(AUDIO_CACHE_STORE, 'readwrite')
+      transaction.objectStore(AUDIO_CACHE_STORE).put(record)
+      await transactionDone(transaction)
+    }).catch(() => { /* quota or private mode: memory still holds this visit's audio */ })
+    this.writes.set(record.id, next)
+    void next.finally(() => { if (this.writes.get(record.id) === next) this.writes.delete(record.id) })
+    return next
+  }
+
   async get(id: string, retain = true): Promise<EncodedChunk | undefined> {
     const memory = this.peek(id)
     if (memory) return memory
-    const database = await openDatabase()
+    await this.writes.get(id)
+    const still = this.peek(id)
+    if (still) return still
+    const database = await this.open()
     if (!database) return undefined
     try {
       const transaction = database.transaction(AUDIO_CACHE_STORE, 'readonly')
@@ -74,30 +100,18 @@ export class AudioCache {
       return stored
     } catch {
       return undefined
-    } finally {
-      database.close()
     }
   }
 
   async put(record: CachedAudio, retain = true): Promise<void> {
     if (retain) this.memory.set(record.id, record)
     else this.memory.delete(record.id)
-    const database = await openDatabase()
-    if (!database) return
-    try {
-      const transaction = database.transaction(AUDIO_CACHE_STORE, 'readwrite')
-      transaction.objectStore(AUDIO_CACHE_STORE).put(record)
-      await transactionDone(transaction)
-    } catch {
-      /* quota or private mode: memory still holds this visit's audio */
-    } finally {
-      database.close()
-    }
+    void this.persist(record)
   }
 
   async clearDocument(documentId: string): Promise<void> {
     for (const [id, record] of this.memory) if (record.documentId === documentId) this.memory.delete(id)
-    const database = await openDatabase()
+    const database = await this.open()
     if (!database) return
     try {
       const transaction = database.transaction(AUDIO_CACHE_STORE, 'readwrite')
@@ -108,14 +122,13 @@ export class AudioCache {
       await transactionDone(transaction)
     } catch {
       /* best effort */
-    } finally {
-      database.close()
     }
   }
 
   async clearAll(): Promise<void> {
     this.memory.clear()
-    const database = await openDatabase()
+    this.writes.clear()
+    const database = await this.open()
     if (!database) return
     try {
       const transaction = database.transaction(AUDIO_CACHE_STORE, 'readwrite')
@@ -123,9 +136,12 @@ export class AudioCache {
       await transactionDone(transaction)
     } catch {
       /* best effort */
-    } finally {
-      database.close()
     }
+  }
+
+  close(): void {
+    void this.databasePromise?.then(database => database?.close())
+    this.databasePromise = null
   }
 }
 
@@ -137,6 +153,7 @@ export async function clearAudioCache(): Promise<void> {
 
 export async function deleteAudioCacheDatabase(): Promise<void> {
   await sharedAudioCache.clearAll()
+  sharedAudioCache.close()
   if (typeof indexedDB === 'undefined') return
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.deleteDatabase(AUDIO_CACHE_DATABASE)

@@ -283,6 +283,7 @@ describe('prepared audio identity, bounds and progress', () => {
     const engine = new LocalNarratorEngine(vi.fn(), {
       producer, cache, createAudio: () => audio as unknown as HTMLAudioElement,
       lookaheadSeconds: 2.5, maxBufferedSeconds: 4, packTargetSeconds: 1,
+      preparePauseSeconds: 2, prepareResumeSeconds: 3,
     })
     const pages = Array.from({ length: 12 }, (_, index) => `Sentence ${index} keeps the reader moving along.`)
     const chunks = planSpeechChunks(pages, 1, 'document')
@@ -378,6 +379,43 @@ describe('prepared audio identity, bounds and progress', () => {
     expect(end).toHaveBeenCalled()
     expect(session.playbackState).toBe('none')
     expect(handlers.get('play')).toBeNull()
+    engine.dispose()
+  })
+
+  it('fills playhead audio before background prepare and yields between prepare clips', async () => {
+    const producer = new ScriptedProducer()
+    const yields: number[] = []
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache: new AudioCache(), createAudio: () => new FakeAudio() as unknown as HTMLAudioElement,
+      lookaheadSeconds: 2.5, maxBufferedSeconds: 4, packTargetSeconds: 1,
+      preparePauseSeconds: 2, prepareResumeSeconds: 3,
+      yieldPrepare: async () => { yields.push(producer.texts.length) },
+    })
+    const pages = Array.from({ length: 12 }, (_, index) => `Sentence ${index} keeps the reader moving along.`)
+    const chunks = planSpeechChunks(pages, 1, 'document')
+    engine.speak({ text: '', rate: 1, documentId: 'doc-priority', chunks, onPosition: vi.fn(), onPage: vi.fn(), onError: vi.fn() })
+    void engine.prepareDocument({ chunks, rate: 1, documentId: 'doc-priority' })
+    await flush(40)
+    expect(producer.texts[0]).toMatch(/Sentence 0/)
+    expect(producer.texts[1]).toMatch(/Sentence 1/)
+    expect(yields.length).toBeGreaterThan(0)
+    expect(yields[0]!).toBeGreaterThan(1)
+    engine.dispose()
+  })
+
+  it('does not spend the voice on prepare while lookahead is thin', async () => {
+    const producer = new ScriptedProducer()
+    const engine = new LocalNarratorEngine(vi.fn(), {
+      producer, cache: new AudioCache(), createAudio: () => new FakeAudio() as unknown as HTMLAudioElement,
+      lookaheadSeconds: 2.5, maxBufferedSeconds: 4, packTargetSeconds: 1,
+    })
+    const pages = Array.from({ length: 12 }, (_, index) => `Sentence ${index} keeps the reader moving along.`)
+    const chunks = planSpeechChunks(pages, 1, 'document')
+    engine.speak({ text: '', rate: 1, documentId: 'doc-thin', chunks, onPosition: vi.fn(), onPage: vi.fn(), onError: vi.fn() })
+    void engine.prepareDocument({ chunks, rate: 1, documentId: 'doc-thin' })
+    await flush(40)
+    expect(producer.texts.length).toBeGreaterThan(0)
+    expect(producer.texts.length).toBeLessThanOrEqual(5)
     engine.dispose()
   })
 })

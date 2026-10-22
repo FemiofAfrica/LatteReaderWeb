@@ -29,7 +29,8 @@ describe('audio ready copy', () => {
 
   it('keeps the empty and preparing lines free of engine jargon', () => {
     const empty = audioReadyProgress({ parts: [], totalParts: 10, listenedSeconds: 0, preparing: true })
-    expect(audioReadyCopy(empty)).toBe('Preparing audio…')
+    expect(audioReadyCopy(empty)).toBe('Preparing in the background…')
+    expect(audioReadyCopy({ ...empty, generatedPercent: 40, generatedParts: 4 })).toBe('Preparing in the background… 40% ready.')
     expect(audioReadyCopy({ ...empty, preparing: false })).toBe('No audio ready yet. Stay on this page while it prepares.')
     expect(audioReadyCopy(empty)).not.toMatch(/chunk|queue|engine|buffer/i)
   })

@@ -34,6 +34,7 @@ describe('AudioReadyBar', () => {
     const cancel = vi.fn()
     const progress = audioReadyProgress({ parts: [{ duration: 10, pageEnd: 2 }], totalParts: 8, listenedSeconds: 0, preparing: true })
     render(<AudioReadyBar progress={progress} onCancel={cancel} />)
+    expect(screen.getByText(/Preparing in the background/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel preparing' }))
     expect(cancel).toHaveBeenCalledOnce()
   })

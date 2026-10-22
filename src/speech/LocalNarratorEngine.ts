@@ -3,6 +3,7 @@ import { localParts, type LocalPart } from './localPlan'
 import { recordEvent } from '../diagnostics/diagnostics'
 import type { LoadableProducer } from './chunkProducer'
 import { DEFAULT_LOOKAHEAD_SECONDS, MAX_BUFFERED_SECONDS, PACK_TARGET_SECONDS, UNDERRUN_GUARD_SECONDS } from './chunkProducer'
+import { decideSynthesisJob, PREPARE_PAUSE_SECONDS, PREPARE_RESUME_SECONDS, yieldToPlayback } from './prepareSchedule'
 import { KittenProducer } from './kittenProducer'
 import { encodeWav, wavDuration } from './wav'
 import { AudioCache, sharedAudioCache } from './audioCache'
@@ -27,6 +28,9 @@ export interface LocalEngineOptions {
   lookaheadSeconds?: number
   maxBufferedSeconds?: number
   packTargetSeconds?: number
+  preparePauseSeconds?: number
+  prepareResumeSeconds?: number
+  yieldPrepare?: () => Promise<void>
   createAudio?: () => HTMLAudioElement
   producer?: LoadableProducer
   cache?: AudioCache
@@ -69,6 +73,7 @@ export class LocalNarratorEngine implements SpeechEngine {
   private paused = false
   private busy = false
   private pumping = false
+  private pumpEpoch = 0
   private preparingAll = false
   private prepareToken = 0
   private prepareSink: ((progress: AudioReadyProgress) => void) | null = null
@@ -79,12 +84,19 @@ export class LocalNarratorEngine implements SpeechEngine {
   private lookaheadSeconds: number
   private maxBufferedSeconds: number
   private packTargetSeconds: number
+  private preparePauseSeconds: number
+  private prepareResumeSeconds: number
+  private yieldPrepare: () => Promise<void>
+  private prepareStarved = false
   constructor(private changed: (status: LocalStatus) => void, options: LocalEngineOptions = {}) {
     this.producer = options.producer ?? new KittenProducer(() => { if (this.request) this.fail() })
     this.cache = options.cache ?? sharedAudioCache
     this.lookaheadSeconds = options.lookaheadSeconds ?? DEFAULT_LOOKAHEAD_SECONDS
     this.maxBufferedSeconds = options.maxBufferedSeconds ?? MAX_BUFFERED_SECONDS
     this.packTargetSeconds = options.packTargetSeconds ?? PACK_TARGET_SECONDS
+    this.preparePauseSeconds = options.preparePauseSeconds ?? PREPARE_PAUSE_SECONDS
+    this.prepareResumeSeconds = options.prepareResumeSeconds ?? PREPARE_RESUME_SECONDS
+    this.yieldPrepare = options.yieldPrepare ?? yieldToPlayback
     this.queue = new HtmlAudioQueue(options.createAudio?.() ?? createPlaybackAudio(), {
       onSlice: slice => this.enterSlice(slice.part),
       onSegmentEnd: segment => {
@@ -262,16 +274,39 @@ export class LocalNarratorEngine implements SpeechEngine {
     if (this.runNotice.parts) recordEvent('speech.contained', { count: this.runNotice.parts })
     this.runNotice = { parts: 0, dropped: 0 }
   }
+  private schedule() {
+    const decision = decideSynthesisJob({
+      hasPlaybackWork: this.playParts.length > 0,
+      bufferHasRoom: this.bufferHasRoom(),
+      hasPrepareWork: this.preparingAll && this.hasPrepareWork(),
+      playableSeconds: this.playableSeconds(),
+      playing: !!this.request,
+      prepareStarved: this.prepareStarved,
+      pauseSeconds: this.preparePauseSeconds,
+      resumeSeconds: this.prepareResumeSeconds,
+    })
+    this.prepareStarved = decision.prepareStarved
+    return decision.job
+  }
   private shouldGenerate(): boolean {
     if (this.busy) return false
-    if (this.playParts.length && this.bufferHasRoom()) return true
-    return this.preparingAll && this.hasPrepareWork()
+    return decideSynthesisJob({
+      hasPlaybackWork: this.playParts.length > 0,
+      bufferHasRoom: this.bufferHasRoom(),
+      hasPrepareWork: this.preparingAll && this.hasPrepareWork(),
+      playableSeconds: this.playableSeconds(),
+      playing: !!this.request,
+      prepareStarved: this.prepareStarved,
+      pauseSeconds: this.preparePauseSeconds,
+      resumeSeconds: this.prepareResumeSeconds,
+    }).job !== null
   }
   private nextPart(): { part: LocalPart; playback: boolean } | undefined {
-    if (this.playParts.length && this.bufferHasRoom()) {
+    const job = this.schedule()
+    if (job === 'playback' && this.playParts.length) {
       return { part: this.playParts.shift()!, playback: !!this.request }
     }
-    if (!this.preparingAll) return undefined
+    if (job !== 'prepare') return undefined
     const rate = this.currentRate()
     while (this.extraParts.length) {
       const part = this.extraParts.shift()!
@@ -288,6 +323,7 @@ export class LocalNarratorEngine implements SpeechEngine {
   }
   private async pump(run: number) {
     if (this.pumping) return
+    const epoch = ++this.pumpEpoch
     this.pumping = true
     try {
       while ((run === this.run || this.preparingAll) && this.shouldGenerate()) {
@@ -308,6 +344,12 @@ export class LocalNarratorEngine implements SpeechEngine {
             this.playQueue(run)
           }
           this.emitProgress()
+          if (!playback) {
+            this.pumping = false
+            await this.yieldPrepare()
+            if (epoch !== this.pumpEpoch) return
+            this.pumping = true
+          }
         } finally { this.busy = false }
         if (run !== this.run && !this.preparingAll) return
       }
@@ -315,11 +357,14 @@ export class LocalNarratorEngine implements SpeechEngine {
       this.playQueue(run)
     } catch { if (run === this.run) this.fail() }
     finally {
-      this.pumping = false
+      if (epoch === this.pumpEpoch) this.pumping = false
       if (this.preparingAll && !this.hasPrepareWork()) this.preparingAll = false
-      if (run !== this.run && this.request && !this.busy) void this.pump(this.run)
-      else if (this.preparingAll && !this.busy) void this.pump(this.run)
       this.emitProgress()
+      if (epoch !== this.pumpEpoch || this.busy) return
+      if (run !== this.run && this.request) void this.pump(this.run)
+      else if (this.preparingAll && this.shouldGenerate()) {
+        void this.yieldPrepare().then(() => { if (!this.pumping) void this.pump(this.run) })
+      }
     }
   }
   private recoverPart(part: LocalPart, reason: string, playback: boolean) {
@@ -358,7 +403,7 @@ export class LocalNarratorEngine implements SpeechEngine {
     this.consecutiveSkips = 0
     window.dispatchEvent(new CustomEvent('latte-local-metric', { detail: result.metrics }))
     const encoded: EncodedChunk = { part, wav: encodeWav(pcm, result.sampleRate), duration: wavDuration(pcm.length, result.sampleRate), sampleRate: result.sampleRate }
-    if (id) await this.cache.put({ ...encoded, id, documentId: documentId!, producerId: this.producer.id, speed: rate }, playback)
+    if (id) void this.cache.put({ ...encoded, id, documentId: documentId!, producerId: this.producer.id, speed: rate }, playback)
     return encoded
   }
   private noteReady(chunk: EncodedChunk) {
@@ -459,6 +504,7 @@ export class LocalNarratorEngine implements SpeechEngine {
     this.listenedSeconds = 0
     this.lastSliceKey = ''
     this.consecutiveSkips = 0
+    this.prepareStarved = false
     this.noticeRun()
     this.unbindMedia?.(); this.unbindMedia = null
     this.lastPart = null

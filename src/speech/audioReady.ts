@@ -60,11 +60,15 @@ export function formatReadyDuration(seconds: number): string {
  * Avoids engine jargon: the reader only needs to know how long they can leave.
  */
 export function audioReadyCopy(progress: AudioReadyProgress): string {
-  if (progress.preparing && progress.generatedParts === 0) return 'Preparing audio…'
-  if (progress.generatedParts === 0) return 'No audio ready yet. Stay on this page while it prepares.'
   if (progress.totalParts > 0 && progress.generatedParts >= progress.totalParts) {
     return 'The whole document is ready. You can minimize now and it will keep playing.'
   }
+  if (progress.preparing) {
+    return progress.generatedPercent > 0
+      ? `Preparing in the background… ${progress.generatedPercent}% ready.`
+      : 'Preparing in the background…'
+  }
+  if (progress.generatedParts === 0) return 'No audio ready yet. Stay on this page while it prepares.'
   const duration = formatReadyDuration(progress.remainingReadySeconds)
   if (progress.lastReadyPage) {
     return `About ${duration} ready. If you minimize now, it'll play until page ${progress.lastReadyPage}.`
