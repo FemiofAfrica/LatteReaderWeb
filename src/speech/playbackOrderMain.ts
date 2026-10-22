@@ -37,6 +37,7 @@ export interface PlaybackOrderLog {
     ended: boolean
     hidden: boolean
     src: string
+    index: number | null
   }>
   startedAt: number | null
   finished: boolean
@@ -57,6 +58,7 @@ declare global {
     __playbackPlay?: () => void
     __playbackAudio?: HTMLAudioElement
     __playbackParts?: number
+    __playbackIndex?: () => number | null
   }
 }
 
@@ -76,7 +78,22 @@ export function installPlaybackOrderHarness(root: Document = document): Playback
   })
   engine.onEnd(() => { log.finished = true })
 
+  let firstSrc = ''
+  let firstDuration = 5
+  const currentIndex = (): number | null => {
+    const src = audio.currentSrc || audio.src
+    if (!src) return null
+    if (!firstSrc) {
+      firstSrc = src
+      firstDuration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 5
+    }
+    const time = audio.currentTime || 0
+    if (src === firstSrc) return Math.max(0, Math.min(Math.floor(time), Math.max(0, Math.floor(firstDuration) - 1)))
+    return Math.floor(firstDuration) + Math.floor(time)
+  }
   const sample = () => {
+    const index = currentIndex()
+    if (index != null && log.heard.at(-1) !== index) log.heard.push(index)
     log.events.push({
       at: Math.round(performance.now()),
       currentTime: audio.currentTime || 0,
@@ -85,6 +102,7 @@ export function installPlaybackOrderHarness(root: Document = document): Playback
       ended: audio.ended,
       hidden: document.hidden,
       src: audio.currentSrc || audio.src,
+      index,
     })
   }
 
@@ -116,7 +134,13 @@ export function installPlaybackOrderHarness(root: Document = document): Playback
   const button = root.getElementById('play')
   button?.addEventListener('click', play)
   setInterval(sample, 250)
-  Object.assign(window, { __playback: log, __playbackPlay: play, __playbackAudio: audio, __playbackParts: parts.length })
+  Object.assign(window, {
+    __playback: log,
+    __playbackPlay: play,
+    __playbackAudio: audio,
+    __playbackParts: parts.length,
+    __playbackIndex: currentIndex,
+  })
   const status = root.getElementById('status')
   if (status) setInterval(() => { status.textContent = JSON.stringify({ heard: log.heard, loop: audio.loop, hidden: document.hidden, time: audio.currentTime }) }, 500)
   return log

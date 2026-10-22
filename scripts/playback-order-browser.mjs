@@ -42,15 +42,46 @@ try {
   page.on('pageerror', error => console.error(`[pageerror] ${error.message}`))
   await page.goto(`${base}playback-order.html`, { waitUntil: 'networkidle' })
   await page.click('#play')
-  await page.waitForFunction(() => (window.__playback?.heard.length ?? 0) > 0, null, { timeout: 20_000 })
+  await page.waitForFunction(() => window.__playbackIndex?.() != null, null, { timeout: 20_000 })
   console.log(`started; playing visible for ${visibleMs}ms`)
-  await page.waitForTimeout(visibleMs)
-  const beforeHide = await page.evaluate(() => window.__playback.heard.slice())
-  console.log(`heard before hide (${beforeHide.length}): ${beforeHide.join(',')}`)
+  const pollHeard = async (ms, label) => {
+    const heard = []
+    const deadline = Date.now() + ms
+    while (Date.now() < deadline) {
+      const snapshot = await page.evaluate(() => ({
+        index: window.__playbackIndex?.() ?? null,
+        loop: window.__playbackAudio?.loop ?? false,
+        paused: window.__playbackAudio?.paused ?? true,
+        time: window.__playbackAudio?.currentTime ?? 0,
+        hidden: document.hidden,
+        error: window.__playback?.error ?? null,
+      }))
+      if (snapshot.error) throw new Error(snapshot.error)
+      if (snapshot.loop) throw new Error('audio.loop was true; that is the infinite-sentence loop')
+      if (typeof snapshot.index === 'number' && heard.at(-1) !== snapshot.index) {
+        heard.push(snapshot.index)
+        console.log(`[${label}] index=${snapshot.index} t=${snapshot.time.toFixed(2)} paused=${snapshot.paused} hidden=${snapshot.hidden}`)
+      }
+      await page.waitForTimeout(200)
+    }
+    return heard
+  }
+  const visibleHeard = await pollHeard(visibleMs, 'visible')
+  console.log(`heard before hide (${visibleHeard.length}): ${visibleHeard.join(',')}`)
   const session = await page.context().newCDPSession(page)
-  await session.send('Page.setWebLifecycleState', { state: 'hidden' })
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('pagehide'))
+  })
+  try {
+    await session.send('Page.setWebLifecycleState', { state: 'frozen' })
+  } catch (error) {
+    console.log(`lifecycle freeze unavailable (${error.message}); visibilitychange still applied`)
+  }
   console.log(`hidden; playing for ${hiddenMs}ms`)
-  await page.waitForTimeout(hiddenMs)
+  const hiddenHeard = await pollHeard(hiddenMs, 'hidden')
   const result = await page.evaluate(() => ({
     heard: window.__playback.heard.slice(),
     looped: window.__playback.events.some(event => event.loop),
@@ -58,21 +89,28 @@ try {
     pausedWhileHidden: window.__playback.events.filter(event => event.hidden).some(event => event.paused && !event.ended),
     parts: window.__playbackParts,
     samples: window.__playback.events.length,
+    polled: true,
   }))
+  const heard = [...visibleHeard]
+  for (const index of hiddenHeard) {
+    if (heard.at(-1) !== index) heard.push(index)
+  }
   await browser.close()
 
   console.log('--- playback chunk index log ---')
-  console.log(result.heard.join(','))
-  console.log(`parts=${result.parts} heard=${result.heard.length} samples=${result.samples} looped=${result.looped} error=${result.error}`)
+  console.log(heard.join(','))
+  console.log(`visible=${visibleHeard.join(',')}`)
+  console.log(`hidden=${hiddenHeard.join(',')}`)
+  console.log(`parts=${result.parts} heard=${heard.length} pageHeard=${result.heard.join(',')} samples=${result.samples} looped=${result.looped} error=${result.error}`)
 
   assert.equal(result.error, null, `engine error: ${result.error}`)
   assert.equal(result.looped, false, 'audio.loop was true; that is the infinite-sentence loop')
-  assert.ok(result.heard.length >= minHeard, `only heard ${result.heard.length} chunks: ${result.heard.join(',')}`)
-  for (let index = 0; index < result.heard.length; index += 1) {
-    assert.equal(result.heard[index], index, `chunk sequence was not 0..n-1 once each: ${result.heard.join(',')}`)
+  assert.ok(heard.length >= minHeard, `only heard ${heard.length} chunks: ${heard.join(',')}`)
+  for (let index = 0; index < heard.length; index += 1) {
+    assert.equal(heard[index], index, `chunk sequence was not 0..n-1 once each: ${heard.join(',')}`)
   }
-  assert.equal(new Set(result.heard).size, result.heard.length, `duplicate chunk index: ${result.heard.join(',')}`)
-  assert.ok(result.heard.length > beforeHide.length, `hidden tab did not advance (before ${beforeHide.length}, after ${result.heard.length})`)
+  assert.equal(new Set(heard).size, heard.length, `duplicate chunk index: ${heard.join(',')}`)
+  assert.ok(heard.length > visibleHeard.length, `hidden tab did not advance (before ${visibleHeard.length}, after ${heard.length})`)
   console.log('playback-order-browser: ok')
 } finally {
   if (preview) preview.kill('SIGTERM')
