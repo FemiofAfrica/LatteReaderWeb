@@ -126,6 +126,7 @@ await page.getByRole('tab', { name: 'Read' }).click()
 // 4. One press of play reads continuously to the end of the document.
 await page.getByRole('tab', { name: 'Read' }).click()
 await page.getByLabel('Go to page').fill('1')
+await page.getByLabel('Go to page').press('Enter')
 await page.getByRole('tab', { name: 'Read' }).click()
 await page.waitForFunction(() => document.querySelector('.preview-header')?.textContent?.includes('Page 1'))
 await playButton().click()
@@ -166,6 +167,7 @@ check(storedPage === 2, `Stored reading position did not follow playback (saw pa
 // 5. Stop cancels immediately: no utterance starts after stop.
 await page.getByRole('tab', { name: 'Read' }).click()
 await page.getByLabel('Go to page').fill('1')
+await page.getByLabel('Go to page').press('Enter')
 await page.getByRole('tab', { name: 'Read' }).click()
 await page.waitForFunction(() => document.querySelector('.preview-header')?.textContent?.includes('Page 1'))
 await playButton().click()

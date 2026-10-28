@@ -50,6 +50,7 @@ async function start(request: Request) {
  if (tensor.length !== pins.voice.shape[0] * pins.voice.shape[1]) throw Error('INVALID_VOICE')
  voice = tensor
  ort = await moduleFrom(await fetchVerified(at(pins.runtime.bundle.path), pins.runtime.bundle)) as Ort
+ // One WASM thread: extra ORT threads compete with audio and the UI on small cores.
  ort.env.wasm.numThreads = 1; ort.env.wasm.proxy = false
  const glue = await fetchVerified(at(pins.runtime.glue.path), pins.runtime.glue)
  ort.env.wasm.wasmPaths = { mjs: URL.createObjectURL(new Blob([glue], { type: 'text/javascript' })) }

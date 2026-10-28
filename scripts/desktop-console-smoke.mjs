@@ -123,6 +123,7 @@ if (phase !== 'before') {
   await page.getByRole('button',{name:'Next page'}).focus(); await page.keyboard.press('Enter')
   check((await page.getByLabel('Current page').innerText()).startsWith('2'), 'Keyboard next-page failed')
   await page.getByLabel('Go to page').fill('300')
+  await page.getByLabel('Go to page').press('Enter')
   check((await page.getByLabel('Current page').innerText()).startsWith('300'), 'Keyboard jump to last page failed')
   await page.getByLabel('Preview zoom').fill('180'); await page.getByRole('button',{name:'Fit width'}).click()
   await page.waitForTimeout(400)
